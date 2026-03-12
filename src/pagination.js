@@ -37,17 +37,19 @@ export function paginate(data) {
 
   // General notes — 2 per row
   const gnPairs = chunkPairs(data.generalNotes);
-  if (gnPairs.length > 0) {
-    currentPage.push({ type: "gnHeader", cont: false });
+  currentPage.push({ type: "gnHeader", cont: false, empty: gnPairs.length === 0 });
+  if (gnPairs.length === 0) {
+    currentPage.push({ type: "gnRows", pairs: [], empty: true });
+  } else {
     let i = 0;
     while (i < gnPairs.length) {
       if (rowsUsed + 1 > rowsForPage()) {
         flush();
-        currentPage.push({ type: "gnHeader", cont: true });
+        currentPage.push({ type: "gnHeader", cont: true, empty: false });
       }
       const cap = rowsForPage() - rowsUsed;
       const batch = gnPairs.slice(i, i + cap);
-      currentPage.push({ type: "gnRows", pairs: batch });
+      currentPage.push({ type: "gnRows", pairs: batch, empty: false });
       rowsUsed += batch.length;
       i += batch.length;
     }

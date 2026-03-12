@@ -19,14 +19,21 @@ body { font-family: 'Lato', sans-serif; background: #f4f1ee; }
 
 /* ── Buttons ── */
 .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 6px 16px; border: none; border-radius: 3px; cursor: pointer;
   font-family: 'Lato', sans-serif; font-size: 12px; font-weight: 700;
   letter-spacing: 0.06em; text-transform: uppercase; transition: opacity 0.15s;
 }
 .btn:hover { opacity: 0.85; }
+.btn-icon {
+  width: 14px; height: 14px; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0;
+}
+.btn-secondary { background: #2b2b2b; color: white; border: 1px solid #555; }
 .btn-print { background: #923B08; color: white; }
+.btn-import { background: #923B08; color: white; }
 .btn-danger {
-  background: transparent; color: #c0392b; border: 1px solid #c0392b;
+  background: transparent; color: white; border: 1px solid rgba(255,255,255,0.72);
   font-size: 10px; padding: 3px 8px; border-radius: 2px; cursor: pointer;
   font-family: 'Lato', sans-serif; font-weight: 700;
   letter-spacing: 0.06em; text-transform: uppercase;
@@ -35,6 +42,75 @@ body { font-family: 'Lato', sans-serif; background: #f4f1ee; }
 
 /* ── Pages ── */
 .pages { padding: 72px 24px 60px; display: flex; flex-direction: column; align-items: center; }
+
+.import-panel {
+  position: fixed; top: 64px; left: 24px; z-index: 95;
+  width: min(440px, calc(100vw - 48px));
+  background: rgba(255,255,255,0.98);
+  border: 1px solid #d9cec6;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.12);
+  backdrop-filter: blur(10px);
+}
+.import-panel-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 14px 16px 10px;
+  border-bottom: 1px solid #ece2dc;
+}
+.import-panel-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: #923B08;
+}
+.import-panel-copy {
+  margin-top: 4px; font-size: 12px; line-height: 1.4; color: #5f524a;
+}
+.import-close {
+  border: none; background: none; color: #8f8077; cursor: pointer;
+  font-size: 16px; line-height: 1; padding: 0;
+}
+.import-panel-body { padding: 14px 16px 16px; }
+.import-helper {
+  font-size: 12px; line-height: 1.5; color: #4b413a;
+}
+.import-helper + .import-helper { margin-top: 10px; }
+.import-example {
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: #f8f4f1;
+  border: 1px solid #ece2dc;
+  font-family: "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  color: #2b2521;
+}
+.import-textarea {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid #d9cec6;
+  background: #fffdfb;
+  padding: 10px 12px;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 220px;
+  outline: none;
+}
+.import-textarea:focus { border-color: #923B08; }
+.import-actions {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-top: 12px;
+}
+.import-file-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 34px; padding: 0 12px;
+  border: 1px solid #d9cec6; cursor: pointer;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #5f524a; background: #fff;
+}
+.import-status {
+  margin-top: 10px; font-size: 12px; line-height: 1.4; color: #5f524a;
+}
 
 .page {
   background: white; width: 11in; height: 8.5in;
@@ -49,10 +125,23 @@ body { font-family: 'Lato', sans-serif; background: #f4f1ee; }
 }
 
 /* ── Document header ── */
-.doc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
-.doc-header-left { font-family: 'EB Garamond', serif; }
-.doc-header-center { font-family: 'EB Garamond', serif; text-align: center; }
-.doc-header-right { font-family: 'EB Garamond', serif; text-align: right; }
+.doc-header {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: flex-start; margin-bottom: 4px; column-gap: 16px;
+}
+.doc-header-left {
+  font-family: 'EB Garamond', serif;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  min-width: 0;
+}
+.doc-header-center {
+  font-family: 'EB Garamond', serif; text-align: center;
+  justify-self: center; min-width: 0;
+}
+.doc-header-right {
+  font-family: 'EB Garamond', serif; text-align: right;
+  justify-self: end; min-width: 0;
+}
 .doc-header input {
   border: none; outline: none; background: transparent; font-family: 'EB Garamond', serif;
   padding: 0; margin: 0; border-radius: 2px;
@@ -60,7 +149,11 @@ body { font-family: 'Lato', sans-serif; background: #f4f1ee; }
 .doc-header input:focus { background: #fafaf8; }
 .doc-header-project { font-size: 13px; color: #1a1a1a; line-height: 1.4; }
 .doc-header-projnum { font-size: 12px; color: #777; line-height: 1.4; }
-.doc-header-title { font-size: 13px; color: #1a1a1a; font-weight: 500; letter-spacing: 0.04em; }
+.doc-header-title {
+  width: 2.8in; max-width: 100%;
+  font-size: 13px; color: #1a1a1a; font-weight: 700; letter-spacing: 0.04em;
+  text-align: center;
+}
 .doc-header-date { font-size: 13px; color: #1a1a1a; }
 .doc-header-rule { border: none; border-top: 1px solid #ddd; margin: 6px 0 10px; }
 
@@ -85,7 +178,7 @@ body { font-family: 'Lato', sans-serif; background: #f4f1ee; }
   font-size: 12px; padding: 0 2px; flex-shrink: 0; line-height: 1;
   transition: color 0.15s;
 }
-.site-item:hover .site-remove { color: #ccc; }
+.site-item:hover .site-remove { color: #c0392b; }
 .site-remove:hover { color: #c0392b !important; }
 
 .add-inline {
@@ -136,13 +229,14 @@ body { font-family: 'Lato', sans-serif; background: #f4f1ee; }
   border: none; outline: none; resize: none; width: 100%; flex: 1;
   background: transparent; min-height: 60px;
 }
+.item-desc-edit::placeholder { color: #9a9a9a; }
 .item-desc-edit:focus { background: #fafaf8; }
 .item-remove {
   position: absolute; top: 5px; right: 5px; background: none; border: none;
   cursor: pointer; color: transparent; font-size: 12px; line-height: 1; padding: 2px;
   transition: color 0.15s;
 }
-.item-text:hover .item-remove { color: #ccc; }
+.item-text:hover .item-remove { color: #c0392b; }
 .item-remove:hover { color: #c0392b !important; }
 
 .add-item-cell {
@@ -171,6 +265,7 @@ body { font-family: 'Lato', sans-serif; background: #f4f1ee; }
   font-family: 'EB Garamond', serif; font-size: 14px; font-weight: 500;
   padding: 5px 10px; margin-top: 14px; margin-bottom: 0;
 }
+.general-notes-add-only { border-left: 1px solid #ccc; }
 
 /* ── Photo cell ── */
 .photo-cell {
@@ -198,7 +293,7 @@ body { font-family: 'Lato', sans-serif; background: #f4f1ee; }
 @media print {
   @page { size: 11in 8.5in; margin: 0; }
   body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .toolbar, .add-inline, .add-item-cell, .add-room-btn, .site-remove, .item-remove, .photo-controls, .btn-danger { display: none !important; }
+  .toolbar, .import-panel, .add-inline, .add-item-cell, .add-room-btn, .site-remove, .item-remove, .photo-controls, .btn-danger { display: none !important; }
   .pages { padding: 0 !important; }
   .page {
     width: 11in !important; height: 8.5in !important;
@@ -209,4 +304,5 @@ body { font-family: 'Lato', sans-serif; background: #f4f1ee; }
   .item-desc-edit, .site-input, .room-name-input, .doc-header input { background: transparent !important; }
   .photo-cell { cursor: default !important; }
   .photo-drop-hint { display: none !important; }
+  .general-notes-header.is-empty { display: none !important; }
 }

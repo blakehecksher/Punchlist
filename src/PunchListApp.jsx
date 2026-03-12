@@ -1,5 +1,6 @@
-import { useReducer, useRef, useEffect, useCallback } from "react";
+import { useReducer, useRef, useEffect, useCallback, useState } from "react";
 import { idbGetAllPhotos, idbSetPhoto } from "./idb.js";
+import { parseImportText } from "./importParser.js";
 import { paginate } from "./pagination.js";
 import ItemCard from "./ItemCard.jsx";
 import PhotoCell from "./PhotoCell.jsx";
@@ -9,108 +10,68 @@ import "./styles.css";
 
 const STORAGE_KEY = "jbma_punchlist_925park";
 const uid = () => Math.random().toString(36).slice(2, 9);
+const normalizeRoomKey = (name) => name.trim().replace(/\s+/g, " ").toLowerCase();
+const makeItem = (description = "") => ({ id: uid(), description, photo: null, photoPosition: null });
+const getCurrentDateLabel = (date = new Date()) => new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+}).format(date);
+
+function summarizeImport(parsed) {
+  const roomCount = parsed.rooms.length;
+  const roomItemCount = parsed.rooms.reduce((sum, room) => sum + room.items.length, 0);
+  const gnCount = parsed.generalNotes.length;
+  const parts = [];
+
+  if (gnCount > 0) parts.push(`${gnCount} general note${gnCount === 1 ? "" : "s"}`);
+  if (roomItemCount > 0) parts.push(`${roomItemCount} room item${roomItemCount === 1 ? "" : "s"} across ${roomCount} room${roomCount === 1 ? "" : "s"}`);
+
+  return parts.length > 0 ? `Imported ${parts.join(" and ")}.` : "Nothing imported.";
+}
 
 // ── Initial data ──
 
 const INITIAL_DATA = {
-  project: "925 Park Ave. Apt 3-4A",
-  projectNum: "Proj. # 2402",
+  project: "Project Name",
+  projectNum: "Proj. # 0000",
   title: "Punchlist",
-  date: "March 11, 2026",
+  date: getCurrentDateLabel(),
   siteConditions: [
-    "Carpet installation ongoing — 4th floor",
-    "Painting ongoing — 3rd floor",
-    "Kitchen installation ongoing",
-    "Decorative painting ongoing",
+    "Example condition: final painting touch-ups are in progress",
+    "Example condition: flooring protection remains in place in main hall",
+    "Example condition: millwork adjustments are ongoing",
+    "Example condition: electrical trim-out is still underway",
   ],
   generalNotes: [
-    { id: "gn1", description: "Hinge screws to be slotted and oriented vertically", photo: null, photoPosition: null },
-    { id: "gn2", description: "Paint all paintable grilles in returns — bookcases and walls", photo: null, photoPosition: null },
-    { id: "gn3", description: "Grilles to have slotted screws in matching finish", photo: null, photoPosition: null },
-    { id: "gn4", description: "Install all hardware", photo: null, photoPosition: null },
-    { id: "gn5", description: "Install lenses for all recessed light fixtures", photo: null, photoPosition: null },
-    { id: "gn6", description: "Touch up paint at window sills", photo: null, photoPosition: null },
-    { id: "gn7", description: "Install child guards at all windows", photo: null, photoPosition: null },
-    { id: "gn8", description: "Adjust millwork for consistent gaps throughout", photo: null, photoPosition: null },
-    { id: "gn9", description: "Install all electrical, security, and A/V devices and faceplates", photo: null, photoPosition: null },
+    { id: "gn1", description: "Example note 01: verify final paint touch-up at all visible corners.", photo: null, photoPosition: null },
+    { id: "gn2", description: "Example note 02: confirm hardware finish is consistent throughout.", photo: null, photoPosition: null },
+    { id: "gn3", description: "Example note 03: clean glass, mirrors, and adjacent trim before turnover.", photo: null, photoPosition: null },
+    { id: "gn4", description: "Example note 04: review all control locations for alignment and labeling.", photo: null, photoPosition: null },
   ],
   rooms: [
-    { id: "r300", name: "300  Stair Hall", items: [
-      { id: "r300_1", description: "Touch up connection at first step and opening to Living Room", photo: null, photoPosition: null },
-      { id: "r300_2", description: "Stair baluster finish to be continuous — finish currently changes at connection to handrail", photo: null, photoPosition: null },
-      { id: "r300_3", description: "Install closet rod at Stair Hall closet", photo: null, photoPosition: null },
+    { id: "r101", name: "101  Entry Hall", items: [
+      { id: "r101_1", description: "Example item: touch up paint at door frame corners.", photo: null, photoPosition: null },
+      { id: "r101_2", description: "Example item: align cover plates vertically with adjacent trim.", photo: null, photoPosition: null },
     ]},
-    { id: "r305", name: "305  Kitchen", items: [
-      { id: "r305_1", description: "Install painted wood grille above microwave and below gas meter", photo: null, photoPosition: null },
+    { id: "r102", name: "102  Kitchen", items: [
+      { id: "r102_1", description: "Example item: adjust cabinet reveal for consistent gap.", photo: null, photoPosition: null },
+      { id: "r102_2", description: "Example item: clean stone backsplash and sealant joints.", photo: null, photoPosition: null },
+      { id: "r102_3", description: "Example item: verify appliance panel alignment after final install.", photo: null, photoPosition: null },
     ]},
-    { id: "r307", name: "307  Pantry", items: [
-      { id: "r307_1", description: "Paint metal grille", photo: null, photoPosition: null },
+    { id: "r103", name: "103  Pantry", items: [
+      { id: "r103_1", description: "Example item: patch and paint shelf support touch-up locations.", photo: null, photoPosition: null },
     ]},
-    { id: "r400", name: "400  Stair Hall", items: [
-      { id: "r400_1", description: "Entry door hardware to be Antique Brass", photo: null, photoPosition: null },
+    { id: "r104", name: "104  Living Room", items: [
+      { id: "r104_1", description: "Example item: repair minor wall blemish at window return.", photo: null, photoPosition: null },
+      { id: "r104_2", description: "Example item: confirm grille finish matches adjacent ceiling paint.", photo: null, photoPosition: null },
     ]},
-    { id: "r402", name: "402  Primary Bedroom", items: [
-      { id: "r402_1", description: "Clean fireplace surround", photo: null, photoPosition: null },
-      { id: "r402_2", description: "Clean inside of firebox", photo: null, photoPosition: null },
+    { id: "r105", name: "105  Bedroom", items: [
+      { id: "r105_1", description: "Example item: adjust closet doors for even spacing.", photo: null, photoPosition: null },
     ]},
-    { id: "r403", name: "403  Her Dressing", items: [
-      { id: "r403_1", description: "Install grommets at glass shelves to match existing", photo: null, photoPosition: null },
-    ]},
-    { id: "r405", name: "405  Primary Bath", items: [
-      { id: "r405_1", description: "Install tub fixture", photo: null, photoPosition: null },
-      { id: "r405_2", description: "Install shower door", photo: null, photoPosition: null },
-      { id: "r405_3", description: "Touch up paint at joint between wood base top and vanity", photo: null, photoPosition: null },
-    ]},
-    { id: "r406", name: "406  Hall", items: [
-      { id: "r406_1", description: "Install door hardware at closet doors — no touch latch", photo: null, photoPosition: null },
-      { id: "r406_2", description: "Paint exposed pipe in security closet to match", photo: null, photoPosition: null },
-      { id: "r406_3", description: "Adjust doors for consistent gap throughout", photo: null, photoPosition: null },
-    ]},
-    { id: "r407", name: "407  Family Room", items: [
-      { id: "r407_1", description: "Repair cracks at cornice and ceiling", photo: null, photoPosition: null },
-      { id: "r407_2", description: "Paint linear grilles", photo: null, photoPosition: null },
-    ]},
-    { id: "r408", name: "408  Her Study", items: [
-      { id: "r408_1", description: "Repair cracks in cornice at SW corner", photo: null, photoPosition: null },
-      { id: "r408_2", description: "Touch up paint above pocket door and at cornice", photo: null, photoPosition: null },
-    ]},
-    { id: "r409", name: "409  Laundry", items: [
-      { id: "r409_1", description: "Align outlets on north and west walls vertically", photo: null, photoPosition: null },
-      { id: "r409_2", description: "Replace screws to match clothes rod finish (polished nickel)", photo: null, photoPosition: null },
-      { id: "r409_3", description: "Install missing access panel in closet ceiling", photo: null, photoPosition: null },
-      { id: "r409_4", description: "Closet door handle — screws protruding, to be flush", photo: null, photoPosition: null },
-      { id: "r409_5", description: "Fill visible gap/hole at heat detector", photo: null, photoPosition: null },
-      { id: "r409_6", description: "Raise shelf to top grommet location", photo: null, photoPosition: null },
-      { id: "r409_7", description: "Adjust tension on touch latch for hookups — currently too tight", photo: null, photoPosition: null },
-      { id: "r409_8", description: "Clean paint overspray and debris from air inlet slot at radiator", photo: null, photoPosition: null },
-    ]},
-    { id: "r410", name: "410  Study", items: [
-      { id: "r410_1", description: "Paint metal wall grille — left side unpainted", photo: null, photoPosition: null },
-      { id: "r410_2", description: "Install smoke/CO detector", photo: null, photoPosition: null },
-      { id: "r410_3", description: "Install sound attenuation blankets at CU enclosure", photo: null, photoPosition: null },
-      { id: "r410_4", description: "Install lenses in recessed light fixtures", photo: null, photoPosition: null },
-      { id: "r410_5", description: "Install window guards", photo: null, photoPosition: null },
-      { id: "r410_6", description: "Paint linear grille above door", photo: null, photoPosition: null },
-      { id: "r410_7", description: "Install faceplates at all electrical fixtures", photo: null, photoPosition: null },
-      { id: "r410_8", description: "Drop shelves: 1st down 1 pin, 2nd down 1 pin, 3rd down 2 pins", photo: null, photoPosition: null },
-    ]},
-    { id: "r411", name: "411  Study Bath", items: [
-      { id: "r411_1", description: "Handshower and volume control installed incorrectly — refer to drawings and Gus's Bath for correct configuration", photo: null, photoPosition: null },
-      { id: "r411_2", description: "Install glass door at window", photo: null, photoPosition: null },
-      { id: "r411_3", description: "Medicine cabinet cornice requires retouching", photo: null, photoPosition: null },
-      { id: "r411_4", description: "Tighten light fixture above medicine cabinet", photo: null, photoPosition: null },
-      { id: "r411_5", description: "Touch up wall marks adjacent to light above medicine cabinet", photo: null, photoPosition: null },
-    ]},
-    { id: "r413", name: "413  Georgina's Bedroom", items: [
-      { id: "r413_1", description: "Paint metal grille return", photo: null, photoPosition: null },
-    ]},
-    { id: "r414", name: "414  Georgina's Bath", items: [
-      { id: "r414_1", description: "Metal grille to have slotted screws in matching finish", photo: null, photoPosition: null },
-      { id: "r414_2", description: "Clean handshower face", photo: null, photoPosition: null },
-    ]},
-    { id: "r418", name: "418  Henrietta's Bedroom", items: [
-      { id: "r418_1", description: "Desk pencil drawer — remove extension on right side, leave 1/8\" gap", photo: null, photoPosition: null },
-      { id: "r418_2", description: "Adjust radiator panel for consistent gap", photo: null, photoPosition: null },
+    { id: "r106", name: "106  Bath", items: [
+      { id: "r106_1", description: "Example item: verify fixture trim is installed level.", photo: null, photoPosition: null },
+      { id: "r106_2", description: "Example item: clean mirror edges and adjacent sealant.", photo: null, photoPosition: null },
     ]},
   ]
 };
@@ -175,15 +136,40 @@ function reducer(state, action) {
       return mapItem(state, action.id, i => ({ ...i, photoPosition: action.position }));
 
     case "addGeneralNote":
-      return { ...state, generalNotes: [...state.generalNotes, { id: uid(), description: "", photo: null, photoPosition: null }] };
+      return { ...state, generalNotes: [...state.generalNotes, makeItem()] };
     case "removeGeneralNote":
       return { ...state, generalNotes: state.generalNotes.filter(i => i.id !== action.id) };
+
+    case "importNotes": {
+      const rooms = state.rooms.map((room) => ({ ...room, items: [...room.items] }));
+      const roomIndexByKey = new Map(rooms.map((room, index) => [normalizeRoomKey(room.name), index]));
+      const nextGeneralNotes = [...state.generalNotes, ...action.payload.generalNotes.map((description) => makeItem(description))];
+
+      action.payload.rooms.forEach((room) => {
+        const key = normalizeRoomKey(room.name);
+        const importedItems = room.items.map((description) => makeItem(description));
+        const existingIndex = roomIndexByKey.get(key);
+
+        if (existingIndex !== undefined) {
+          rooms[existingIndex] = {
+            ...rooms[existingIndex],
+            items: [...rooms[existingIndex].items, ...importedItems],
+          };
+          return;
+        }
+
+        roomIndexByKey.set(key, rooms.length);
+        rooms.push({ id: uid(), name: room.name, items: importedItems });
+      });
+
+      return { ...state, generalNotes: nextGeneralNotes, rooms };
+    }
 
     case "addRoomItem":
       return {
         ...state,
         rooms: state.rooms.map(r => r.id !== action.roomId ? r : {
-          ...r, items: [...r.items, { id: uid(), description: "", photo: null, photoPosition: null }],
+          ...r, items: [...r.items, makeItem()],
         }),
       };
     case "removeRoomItem":
@@ -197,7 +183,7 @@ function reducer(state, action) {
     case "setRoomName":
       return { ...state, rooms: state.rooms.map(r => r.id !== action.roomId ? r : { ...r, name: action.name }) };
     case "addRoom":
-      return { ...state, rooms: [...state.rooms, { id: uid(), name: "Room Name", items: [{ id: uid(), description: "", photo: null, photoPosition: null }] }] };
+      return { ...state, rooms: [...state.rooms, { id: uid(), name: "Room Name", items: [makeItem()] }] };
     case "removeRoom":
       return { ...state, rooms: state.rooms.filter(r => r.id !== action.roomId) };
 
@@ -206,12 +192,27 @@ function reducer(state, action) {
   }
 }
 
+function DocumentIcon() {
+  return (
+    <svg className="btn-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M9 13h6" />
+      <path d="M9 17h6" />
+      <path d="M9 9h1" />
+    </svg>
+  );
+}
+
 // ── App ──
 
 export default function PunchListApp() {
   const [data, dispatch] = useReducer(reducer, INITIAL_DATA);
   const [saveStatus, setSaveStatus] = useReducer((_, v) => v, "");
   const saveTimer = useRef(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importStatus, setImportStatus] = useState("");
 
   // Load persisted data on mount
   useEffect(() => {
@@ -234,6 +235,7 @@ export default function PunchListApp() {
             type: "load",
             data: {
               ...parsed,
+              date: getCurrentDateLabel(),
               generalNotes: mergePhotos(parsed.generalNotes || []),
               rooms: (parsed.rooms || []).map(r => ({ ...r, items: mergePhotos(r.items || []) })),
             },
@@ -272,6 +274,32 @@ export default function PunchListApp() {
     if (dataUrl) idbSetPhoto(itemId, { dataUrl, position }).catch(() => {});
   }, [data]);
 
+  const handleImportFile = useCallback(async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      setImportText(text);
+      setImportStatus(`${file.name} loaded. Review it, then import.`);
+    } catch {
+      setImportStatus("That file could not be read.");
+    } finally {
+      event.target.value = "";
+    }
+  }, []);
+
+  const handleImportSubmit = useCallback(() => {
+    try {
+      const parsed = parseImportText(importText);
+      dispatch({ type: "importNotes", payload: parsed });
+      setImportStatus(summarizeImport(parsed));
+      setImportText("");
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : "Import failed.");
+    }
+  }, [importText]);
+
   const pages = paginate(data);
 
   // Item numbering maps
@@ -309,7 +337,7 @@ export default function PunchListApp() {
       const isHalfWidth = nextSeg?.type === "gnRows" &&
         nextSeg.pairs.length === 1 && nextSeg.pairs[0][1] === null;
       return [
-        <div key={`gnHeader-${segIdx}`} className="general-notes-header"
+        <div key={`gnHeader-${segIdx}`} className={`general-notes-header${seg.empty ? " is-empty" : ""}`}
           style={isHalfWidth ? { width: "50%" } : undefined}>
           General Notes{seg.cont ? "  (cont'd)" : ""}
         </div>
@@ -332,7 +360,7 @@ export default function PunchListApp() {
       ));
       if (showAdd) {
         elements.push(
-          <button key="add-gn" className="add-item-cell" onClick={() => dispatch({ type: "addGeneralNote" })}>＋ Add note</button>
+          <button key="add-gn" className={`add-item-cell${seg.empty ? " general-notes-add-only" : ""}`} onClick={() => dispatch({ type: "addGeneralNote" })}>＋ Add note</button>
         );
       }
       return elements;
@@ -404,9 +432,11 @@ export default function PunchListApp() {
             <div className="item-card" style={{ flex: 1 }}>
               <div className="item-text">
                 <div className="item-num">Item #{String(roomItemNums[item.id]).padStart(2, "0")}</div>
-                <div className="item-label">Description:</div>
-                <textarea className="item-desc-edit" value={item.description}
-                  onChange={e => dispatch({ type: "updateItem", id: item.id, field: "description", value: e.target.value })} rows={4} />
+              <div className="item-label">Description:</div>
+              <textarea className="item-desc-edit" value={item.description}
+                onChange={e => dispatch({ type: "updateItem", id: item.id, field: "description", value: e.target.value })}
+                placeholder="Click here to enter description"
+                rows={4} />
                 <button className="item-remove" onClick={() => dispatch({ type: "removeRoomItem", roomId, itemId: item.id })} title="Remove item">✕</button>
               </div>
               <PhotoCell
@@ -444,9 +474,63 @@ export default function PunchListApp() {
         </div>
         <div className="toolbar-right">
           {saveStatus && <span className="save-status">{saveStatus}</span>}
-          <button className="btn btn-print" onClick={() => window.print()}>⎙  Print / PDF</button>
+          <button className="btn btn-secondary" onClick={() => setImportOpen((open) => !open)}>
+            {importOpen ? "Close Import" : "Import Notes"}
+          </button>
+          <button className="btn btn-print" onClick={() => window.print()}>
+            <DocumentIcon />
+            Print / PDF
+          </button>
         </div>
       </div>
+
+      {importOpen && (
+        <div className="import-panel">
+          <div className="import-panel-header">
+            <div>
+              <div className="import-panel-label">Import Punchlist Notes</div>
+              <div className="import-panel-copy">Paste plain text or markdown, or load a `.md` / `.txt` file.</div>
+            </div>
+            <button className="import-close" onClick={() => setImportOpen(false)} aria-label="Close import panel">x</button>
+          </div>
+
+          <div className="import-panel-body">
+            <p className="import-helper">
+              Use either room headings with bullet items underneath, or a top-level bullet outline where each room name has nested bullet items. A <strong>General Notes</strong> section imports into general notes. <strong>Site Conditions</strong> is ignored.
+            </p>
+            <pre className="import-example">{`- General Notes
+    - Hinge screws aligned vertically
+    - Install all hardware
+
+- Study 410
+    - Install smoke/CO detector
+    - Drop shelves
+        - 1st shelf drop by 1 pin
+        - 2nd shelf drop by 1 pin`}</pre>
+            <p className="import-helper">
+              Markdown headings like <code>## Study 410</code> still work too. A chatbot can reformat rough field notes into either structure before you paste them here.
+            </p>
+            <textarea
+              className="import-textarea"
+              value={importText}
+              onChange={(event) => {
+                setImportText(event.target.value);
+                setImportStatus("");
+              }}
+              placeholder="Paste import text here..."
+              rows={12}
+            />
+            <div className="import-actions">
+              <label className="import-file-btn">
+                Load .md / .txt
+                <input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={handleImportFile} hidden />
+              </label>
+              <button className="btn btn-import" onClick={handleImportSubmit}>Add To List</button>
+            </div>
+            {importStatus && <div className="import-status">{importStatus}</div>}
+          </div>
+        </div>
+      )}
 
       <div className="pages">
         {pages.map((pageSegs, pageIdx) => {

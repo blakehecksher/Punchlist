@@ -7,7 +7,8 @@ export default function ItemCard({ item, num, onDescChange, onPhoto, onRemove, o
         <div className="item-num">Item #{String(num).padStart(2, "0")}</div>
         <div className="item-label">Description:</div>
         <textarea className="item-desc-edit" value={item.description}
-          onChange={e => onDescChange(e.target.value)} rows={4} />
+          onChange={e => onDescChange(e.target.value)}
+          placeholder="Click here to enter description" rows={4} />
         <button className="item-remove" onClick={onRemove} title="Remove item">✕</button>
       </div>
       <PhotoCell
