@@ -90,6 +90,7 @@ const INITIAL_DATA = {
   projectNum: "Proj. # 0000",
   title: "Punchlist",
   date: getCurrentDateLabel(),
+  firm: "John B. Murray Architect, LLC",
   punchlistDate: "March 11, 2026  9:30 – 11:00",
   generalNotesTitle: "General",
   siteConditions: [
@@ -249,6 +250,7 @@ function reducer(state, action) {
         projectNum: "Proj. # 0000",
         title: "Punchlist",
         date: getCurrentDateLabel(),
+        firm: "John B. Murray Architect, LLC",
         punchlistDate: "March 11, 2026  9:30 – 11:00",
         generalNotesTitle: "General",
         siteConditions: [],
@@ -308,6 +310,7 @@ export default function PunchListApp() {
             data: {
               ...parsed,
               date: getCurrentDateLabel(),
+              firm: parsed.firm ?? "John B. Murray Architect, LLC",
               punchlistDate: parsed.punchlistDate ?? "March 11, 2026  9:30 – 11:00",
               generalNotesTitle: parsed.generalNotesTitle ?? "General",
               generalNotes: mergePhotos(parsed.generalNotes || []),
@@ -676,10 +679,12 @@ export default function PunchListApp() {
                 <div className="doc-header-center">
                   <input className="doc-header-title" value={data.title}
                     onChange={e => dispatch({ type: "setField", field: "title", value: e.target.value })} />
-                </div>
-                <div className="doc-header-right">
                   <input className="doc-header-date" value={data.date}
                     onChange={e => dispatch({ type: "setField", field: "date", value: e.target.value })} />
+                </div>
+                <div className="doc-header-right">
+                  <input className="doc-header-firm" value={data.firm ?? ""}
+                    onChange={e => dispatch({ type: "setField", field: "firm", value: e.target.value })} />
                   <div className="doc-header-page">page {pageIdx + 1} of {pages.length}</div>
                 </div>
               </div>
