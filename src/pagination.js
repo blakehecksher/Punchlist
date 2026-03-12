@@ -13,7 +13,6 @@ function chunkPairs(arr) {
 //   'siteConditions'  — site conditions list (page 1 only)
 //   'gnHeader'        — { cont } General Notes header
 //   'gnRows'          — { pairs } general notes, 2 per row
-//   'byRoomLabel'     — "By Room" section divider
 //   'roomRows'        — { roomId, roomName, cont, pairs } multi-item room
 //   'singleRoomPair'  — { left, right? } two 1-item rooms sharing a row
 
@@ -56,20 +55,11 @@ export function paginate(data) {
   }
 
   // --- Rooms ---
-  let byRoomLabelEmitted = false;
   let singleBuffer = null;
-
-  const emitByRoomLabel = () => {
-    if (!byRoomLabelEmitted) {
-      currentPage.push({ type: "byRoomLabel" });
-      byRoomLabelEmitted = true;
-    }
-  };
 
   const flushSingleBuffer = () => {
     if (!singleBuffer) return;
     if (rowsUsed >= rowsForPage()) flush();
-    emitByRoomLabel();
     currentPage.push({ type: "singleRoomPair", left: singleBuffer, right: null });
     rowsUsed += 1;
     singleBuffer = null;
@@ -79,7 +69,6 @@ export function paginate(data) {
     if (room.items.length === 0) {
       flushSingleBuffer();
       if (rowsUsed >= rowsForPage()) flush();
-      emitByRoomLabel();
       currentPage.push({ type: "roomRows", roomId: room.id, roomName: room.name, cont: false, pairs: [] });
       return;
     }
@@ -88,7 +77,6 @@ export function paginate(data) {
       const entry = { roomId: room.id, roomName: room.name, item: room.items[0], cont: false };
       if (singleBuffer) {
         if (rowsUsed >= rowsForPage()) flush();
-        emitByRoomLabel();
         currentPage.push({ type: "singleRoomPair", left: singleBuffer, right: entry });
         rowsUsed += 1;
         singleBuffer = null;
@@ -108,12 +96,10 @@ export function paginate(data) {
     const availableRows = rowsForPage() - rowsUsed;
 
     if (totalRows <= availableRows) {
-      emitByRoomLabel();
       currentPage.push({ type: "roomRows", roomId: room.id, roomName: room.name, cont: false, pairs: roomPairs });
       rowsUsed += totalRows;
     } else if (totalRows <= rowsForPage() || totalRows <= ROWS_OTHER) {
       flush();
-      emitByRoomLabel();
       currentPage.push({ type: "roomRows", roomId: room.id, roomName: room.name, cont: false, pairs: roomPairs });
       rowsUsed += totalRows;
     } else {
@@ -123,7 +109,6 @@ export function paginate(data) {
 
       while (i < fullPairs.length) {
         if (rowsUsed >= rowsForPage()) flush();
-        emitByRoomLabel();
         const cap = rowsForPage() - rowsUsed;
         const batch = fullPairs.slice(i, i + cap);
         currentPage.push({ type: "roomRows", roomId: room.id, roomName: room.name, cont, pairs: batch });
@@ -137,7 +122,6 @@ export function paginate(data) {
         const entry = { roomId: room.id, roomName: room.name, item: trailingItem, cont };
         if (singleBuffer) {
           if (rowsUsed >= rowsForPage()) flush();
-          emitByRoomLabel();
           currentPage.push({ type: "singleRoomPair", left: singleBuffer, right: entry });
           rowsUsed += 1;
           singleBuffer = null;

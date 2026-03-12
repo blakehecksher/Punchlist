@@ -1,7 +1,7 @@
 const BULLET_RE = /^(\s*)(?:[-*+]|(?:\d+)[.)])\s+(.+?)\s*$/;
 const COLON_HEADING_RE = /^[A-Za-z0-9].*:\s*$/;
 const GENERAL_NOTES_KEYS = new Set(["general notes", "general note", "general"]);
-const IGNORED_SECTION_KEYS = new Set(["site conditions", "site condition"]);
+const SITE_CONDITION_KEYS = new Set(["site conditions", "site condition"]);
 
 function normalizeIndent(line) {
   return line.replace(/\t/g, "    ");
@@ -14,7 +14,7 @@ function normalizeSectionName(name) {
 function classifySection(name) {
   const key = normalizeSectionName(name).toLowerCase();
   if (GENERAL_NOTES_KEYS.has(key)) return "generalNotes";
-  if (IGNORED_SECTION_KEYS.has(key)) return "ignored";
+  if (SITE_CONDITION_KEYS.has(key)) return "siteConditions";
   return "room";
 }
 
@@ -38,12 +38,17 @@ function ensureSection(sections, rawName) {
 }
 
 function finalizeSections(sections) {
+  const siteConditions = [];
   const generalNotes = [];
   const rooms = [];
 
   sections.forEach((section) => {
     const cleanedItems = section.items.map((item) => item.trim()).filter(Boolean);
-    if (cleanedItems.length === 0 || section.type === "ignored") return;
+    if (cleanedItems.length === 0) return;
+    if (section.type === "siteConditions") {
+      siteConditions.push(...cleanedItems);
+      return;
+    }
     if (section.type === "generalNotes") {
       generalNotes.push(...cleanedItems);
       return;
@@ -51,11 +56,11 @@ function finalizeSections(sections) {
     rooms.push({ name: section.name, items: cleanedItems });
   });
 
-  if (generalNotes.length === 0 && rooms.length === 0) {
-    throw new Error("No importable notes found. Use room headings or top-level bullets with item bullets underneath.");
+  if (siteConditions.length === 0 && generalNotes.length === 0 && rooms.length === 0) {
+    throw new Error("No importable notes found. Use Site Conditions, General Notes, or room headings with bullet items underneath.");
   }
 
-  return { generalNotes, rooms };
+  return { siteConditions, generalNotes, rooms };
 }
 
 function flattenOutlineNode(node) {
@@ -99,7 +104,6 @@ function parseOutlineSections(text) {
   const sections = [];
   topLevelSections.forEach((sectionNode) => {
     const section = ensureSection(sections, sectionNode.content);
-    if (section.type === "ignored") return;
     sectionNode.children.forEach((itemNode) => {
       const item = flattenOutlineNode(itemNode);
       if (item) section.items.push(item);
@@ -145,7 +149,7 @@ function parseHeadingSections(text) {
 
 export function parseImportText(source) {
   const text = source.replace(/\r\n?/g, "\n").trim();
-  if (!text) throw new Error("Paste notes or load a .md/.txt file before importing.");
+  if (!text) throw new Error("Paste notes or load a .docx/.md/.txt file before importing.");
 
   return parseOutlineSections(text) ?? parseHeadingSections(text);
 }

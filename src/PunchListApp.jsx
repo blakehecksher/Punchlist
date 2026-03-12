@@ -1,29 +1,82 @@
 import { useReducer, useRef, useEffect, useCallback, useState } from "react";
 import { idbGetAllPhotos, idbSetPhoto } from "./idb.js";
+import { convertHtmlToImportText, hasStructuredImportHtml } from "./importHtml.js";
+import { readImportFile } from "./importFile.js";
 import { parseImportText } from "./importParser.js";
 import { paginate } from "./pagination.js";
 import ItemCard from "./ItemCard.jsx";
 import PhotoCell from "./PhotoCell.jsx";
 import "./styles.css";
 
+// Constants
 // ── Constants ──
 
 const STORAGE_KEY = "jbma_punchlist_925park";
 const uid = () => Math.random().toString(36).slice(2, 9);
 const normalizeRoomKey = (name) => name.trim().replace(/\s+/g, " ").toLowerCase();
 const makeItem = (description = "") => ({ id: uid(), description, photo: null, photoPosition: null });
+const insertAtSelection = (current, start, end, inserted) => `${current.slice(0, start)}${inserted}${current.slice(end)}`;
 const getCurrentDateLabel = (date = new Date()) => new Intl.DateTimeFormat("en-US", {
   month: "long",
   day: "numeric",
   year: "numeric",
 }).format(date);
+/* Legacy prompt block removed.
+
+Clean up the language — precise and consistent, but don't change my meaning
+Keep my structure exactly — dash bullets, room name before room number, sub-bullets where I have them
+Consistent title case for room names (e.g. "Primary Bedroom" not "Pri Bed")
+Order rooms by room number, ascending
+Paste the result as plain text — no file, no extra markdown formatting
+
+[paste your notes below this line]
+*/
+const IMPORT_CLEANUP_PROMPT = `I will paste raw punch list notes below. Rewrite them so they can be imported into a punch list tool.
+
+Follow these rules:
+- Return plain text only
+- Use dash bullets only
+- Do not use numbered lists
+- Do not use tables
+- Do not add headings, bold text, or extra markdown
+- Keep the same meaning
+- Clean up grammar, spelling, and consistency
+- Use Title Case for room names
+- Write room name first, then room number
+- Put rooms in ascending room-number order
+- If my notes include Site Conditions, keep them under:
+  - Site Conditions
+- If my notes include General Notes, keep them under:
+  - General Notes
+- Put each room as a top-level dash bullet
+- Put each punch list item as a nested dash bullet under that room
+- Keep any sub-items as nested dash bullets under the main item
+- Do not combine, remove, or invent items
+
+Use this exact format:
+
+- Site Conditions
+    - condition text
+- General Notes
+    - note text
+- Study 410
+    - item text
+    - item text
+        - sub-item text
+- Primary Bedroom 402
+    - item text
+
+After these instructions, I will paste my raw notes.
+Reply with the cleaned bullet list only.`;
 
 function summarizeImport(parsed) {
   const roomCount = parsed.rooms.length;
   const roomItemCount = parsed.rooms.reduce((sum, room) => sum + room.items.length, 0);
+  const siteConditionCount = parsed.siteConditions.length;
   const gnCount = parsed.generalNotes.length;
   const parts = [];
 
+  if (siteConditionCount > 0) parts.push(`${siteConditionCount} site condition${siteConditionCount === 1 ? "" : "s"}`);
   if (gnCount > 0) parts.push(`${gnCount} general note${gnCount === 1 ? "" : "s"}`);
   if (roomItemCount > 0) parts.push(`${roomItemCount} room item${roomItemCount === 1 ? "" : "s"} across ${roomCount} room${roomCount === 1 ? "" : "s"}`);
 
@@ -143,6 +196,7 @@ function reducer(state, action) {
     case "importNotes": {
       const rooms = state.rooms.map((room) => ({ ...room, items: [...room.items] }));
       const roomIndexByKey = new Map(rooms.map((room, index) => [normalizeRoomKey(room.name), index]));
+      const nextSiteConditions = [...state.siteConditions, ...action.payload.siteConditions];
       const nextGeneralNotes = [...state.generalNotes, ...action.payload.generalNotes.map((description) => makeItem(description))];
 
       action.payload.rooms.forEach((room) => {
@@ -162,7 +216,7 @@ function reducer(state, action) {
         rooms.push({ id: uid(), name: room.name, items: importedItems });
       });
 
-      return { ...state, generalNotes: nextGeneralNotes, rooms };
+      return { ...state, siteConditions: nextSiteConditions, generalNotes: nextGeneralNotes, rooms };
     }
 
     case "addRoomItem":
@@ -213,6 +267,7 @@ export default function PunchListApp() {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importStatus, setImportStatus] = useState("");
+  const [promptCopyStatus, setPromptCopyStatus] = useState("");
 
   // Load persisted data on mount
   useEffect(() => {
@@ -279,11 +334,11 @@ export default function PunchListApp() {
     if (!file) return;
 
     try {
-      const text = await file.text();
+      const text = await readImportFile(file);
       setImportText(text);
-      setImportStatus(`${file.name} loaded. Review it, then import.`);
-    } catch {
-      setImportStatus("That file could not be read.");
+      setImportStatus(`${file.name} loaded. Review the outline, then import.`);
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : "That file could not be read. Use .docx, .md, or .txt.");
     } finally {
       event.target.value = "";
     }
@@ -299,6 +354,35 @@ export default function PunchListApp() {
       setImportStatus(error instanceof Error ? error.message : "Import failed.");
     }
   }, [importText]);
+
+  const handleImportPaste = useCallback((event) => {
+    const clipboard = event.clipboardData;
+    const html = clipboard?.getData("text/html") ?? "";
+    if (!html || !hasStructuredImportHtml(html)) return;
+
+    const converted = convertHtmlToImportText(html);
+    if (!converted) return;
+
+    event.preventDefault();
+
+    const textarea = event.target;
+    const selectionStart = typeof textarea.selectionStart === "number" ? textarea.selectionStart : importText.length;
+    const selectionEnd = typeof textarea.selectionEnd === "number" ? textarea.selectionEnd : selectionStart;
+
+    setImportText((current) => insertAtSelection(current, selectionStart, selectionEnd, converted));
+    setImportStatus("Rich paste converted to outline. Review the outline, then import.");
+  }, [importText]);
+
+  const handleCopyPrompt = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(IMPORT_CLEANUP_PROMPT);
+      setPromptCopyStatus("Copied");
+      setTimeout(() => setPromptCopyStatus(""), 1500);
+    } catch {
+      setPromptCopyStatus("Copy failed");
+      setTimeout(() => setPromptCopyStatus(""), 1500);
+    }
+  }, []);
 
   const pages = paginate(data);
 
@@ -364,10 +448,6 @@ export default function PunchListApp() {
         );
       }
       return elements;
-    }
-
-    if (seg.type === "byRoomLabel") {
-      return [<div key="byRoomLabel" className="section-label" style={{ marginTop: 8, marginBottom: 4 }}>By Room</div>];
     }
 
     if (seg.type === "roomRows") {
@@ -489,27 +569,28 @@ export default function PunchListApp() {
           <div className="import-panel-header">
             <div>
               <div className="import-panel-label">Import Punchlist Notes</div>
-              <div className="import-panel-copy">Paste plain text or markdown, or load a `.md` / `.txt` file.</div>
+              <div className="import-panel-copy">Paste bulleted notes in the box below, or load a `.docx`, `.md`, or `.txt` file.</div>
             </div>
             <button className="import-close" onClick={() => setImportOpen(false)} aria-label="Close import panel">x</button>
           </div>
 
           <div className="import-panel-body">
             <p className="import-helper">
-              Use either room headings with bullet items underneath, or a top-level bullet outline where each room name has nested bullet items. A <strong>General Notes</strong> section imports into general notes. <strong>Site Conditions</strong> is ignored.
+              Format your notes as a bulleted outline — room name and number as the top-level item, punch list items nested beneath. A <strong>Site Conditions</strong> section will import into Site Conditions. A <strong>General Notes</strong> section will import into General Notes. See example below.
             </p>
-            <pre className="import-example">{`- General Notes
-    - Hinge screws aligned vertically
-    - Install all hardware
-
-- Study 410
+            <pre className="import-example">{`- Study 410
     - Install smoke/CO detector
     - Drop shelves
         - 1st shelf drop by 1 pin
         - 2nd shelf drop by 1 pin`}</pre>
-            <p className="import-helper">
-              Markdown headings like <code>## Study 410</code> still work too. A chatbot can reformat rough field notes into either structure before you paste them here.
-            </p>
+            <div className="import-tip-row">
+              <p className="import-helper import-tip">Tip: Copy this prompt into a chatbot, paste your raw notes after it, then paste the chatbot's cleaned bullet list here.</p>
+              <button className="copy-prompt-btn" onClick={handleCopyPrompt}>
+                Copy prompt
+                {promptCopyStatus ? ` ${promptCopyStatus}` : " ↓"}
+              </button>
+            </div>
+            <pre className="import-prompt">{IMPORT_CLEANUP_PROMPT}</pre>
             <textarea
               className="import-textarea"
               value={importText}
@@ -517,13 +598,14 @@ export default function PunchListApp() {
                 setImportText(event.target.value);
                 setImportStatus("");
               }}
+              onPaste={handleImportPaste}
               placeholder="Paste import text here..."
               rows={12}
             />
             <div className="import-actions">
               <label className="import-file-btn">
-                Load .md / .txt
-                <input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={handleImportFile} hidden />
+                Load .docx / .md / .txt
+                <input type="file" accept=".doc,.docx,.md,.markdown,.txt,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain" onChange={handleImportFile} hidden />
               </label>
               <button className="btn btn-import" onClick={handleImportSubmit}>Add To List</button>
             </div>
