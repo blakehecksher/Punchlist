@@ -90,6 +90,8 @@ const INITIAL_DATA = {
   projectNum: "Proj. # 0000",
   title: "Punchlist",
   date: getCurrentDateLabel(),
+  punchlistDate: "March 11, 2026  9:30 – 11:00",
+  generalNotesTitle: "General",
   siteConditions: [
     "Example condition: final painting touch-ups are in progress",
     "Example condition: flooring protection remains in place in main hall",
@@ -247,6 +249,8 @@ function reducer(state, action) {
         projectNum: "Proj. # 0000",
         title: "Punchlist",
         date: getCurrentDateLabel(),
+        punchlistDate: "March 11, 2026  9:30 – 11:00",
+        generalNotesTitle: "General",
         siteConditions: [],
         generalNotes: [],
         rooms: [],
@@ -304,6 +308,8 @@ export default function PunchListApp() {
             data: {
               ...parsed,
               date: getCurrentDateLabel(),
+              punchlistDate: parsed.punchlistDate ?? "March 11, 2026  9:30 – 11:00",
+              generalNotesTitle: parsed.generalNotesTitle ?? "General",
               generalNotes: mergePhotos(parsed.generalNotes || []),
               rooms: (parsed.rooms || []).map(r => ({ ...r, items: mergePhotos(r.items || []) })),
             },
@@ -436,7 +442,15 @@ export default function PunchListApp() {
       return [
         <div key={`gnHeader-${segIdx}`} className={`general-notes-header${seg.empty ? " is-empty" : ""}`}
           style={isHalfWidth ? { width: "50%" } : undefined}>
-          General Notes{seg.cont ? "  (cont'd)" : ""}
+          {seg.cont ? (
+            <span>{data.generalNotesTitle || "General"}  (cont&apos;d)</span>
+          ) : (
+            <input
+              className="gn-title-input"
+              value={data.generalNotesTitle ?? "General"}
+              onChange={e => dispatch({ type: "setField", field: "generalNotesTitle", value: e.target.value })}
+            />
+          )}
         </div>
       ];
     }
@@ -666,6 +680,7 @@ export default function PunchListApp() {
                 <div className="doc-header-right">
                   <input className="doc-header-date" value={data.date}
                     onChange={e => dispatch({ type: "setField", field: "date", value: e.target.value })} />
+                  <div className="doc-header-page">page {pageIdx + 1} of {pages.length}</div>
                 </div>
               </div>
               <hr className="doc-header-rule" />
@@ -673,7 +688,15 @@ export default function PunchListApp() {
               {/* Site conditions — page 1 only */}
               {headerSegs.some(s => s.type === "siteConditions") && (
                 <div>
-                  <div className="section-label">Site Conditions</div>
+                  <div className="section-label-row">
+                    <div className="section-label">Site Conditions</div>
+                    <input
+                      className="site-input site-date-input"
+                      value={data.punchlistDate ?? ""}
+                      onChange={e => dispatch({ type: "setField", field: "punchlistDate", value: e.target.value })}
+                      placeholder="Punchlist date and time…"
+                    />
+                  </div>
                   <ul className="site-list">
                     {data.siteConditions.map((s, i) => (
                       <li key={i} className="site-item">
