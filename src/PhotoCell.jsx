@@ -42,7 +42,7 @@ function compressImage(file) {
  */
 const DEFAULT_POS = { scale: 1, x: 50, y: 50 };
 
-export default function PhotoCell({ itemId, photo, position, onPhoto, onRemove, onPositionChange }) {
+export default function PhotoCell({ projectId, itemId, photo, position, onPhoto, onRemove, onPositionChange }) {
   const [dragOver, setDragOver] = useState(false);
   const [pos, setPos] = useState(position ?? DEFAULT_POS);
   const [photoKey, setPhotoKey] = useState(photo);
@@ -70,8 +70,8 @@ export default function PhotoCell({ itemId, photo, position, onPhoto, onRemove, 
     if (!file || !file.type.startsWith("image/")) return;
     const dataUrl = await compressImage(file);
     onPhoto(dataUrl, DEFAULT_POS);
-    idbSetPhoto(itemId, { dataUrl, position: DEFAULT_POS }).catch(() => {});
-  }, [itemId, onPhoto]);
+    idbSetPhoto(projectId, itemId, { dataUrl, position: DEFAULT_POS }).catch(() => {});
+  }, [projectId, itemId, onPhoto]);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
@@ -143,8 +143,8 @@ export default function PhotoCell({ itemId, photo, position, onPhoto, onRemove, 
   const handleRemove = useCallback((e) => {
     e.stopPropagation();
     onRemove();
-    idbDeletePhoto(itemId).catch(() => {});
-  }, [itemId, onRemove]);
+    idbDeletePhoto(projectId, itemId).catch(() => {});
+  }, [projectId, itemId, onRemove]);
 
   const handleReset = useCallback((e) => {
     e.stopPropagation();

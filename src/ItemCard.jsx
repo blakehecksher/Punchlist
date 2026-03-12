@@ -1,6 +1,6 @@
 import PhotoCell from "./PhotoCell.jsx";
 
-export default function ItemCard({ item, num, onDescChange, onPhoto, onRemove, onPositionChange }) {
+export default function ItemCard({ projectId, item, num, onDescChange, onPhoto, onRemove, onPositionChange }) {
   return (
     <div className="item-card">
       <div className="item-text">
@@ -12,6 +12,7 @@ export default function ItemCard({ item, num, onDescChange, onPhoto, onRemove, o
         <button className="item-remove" onClick={onRemove} title="Remove item">✕</button>
       </div>
       <PhotoCell
+        projectId={projectId}
         itemId={item.id}
         photo={item.photo}
         position={item.photoPosition}
