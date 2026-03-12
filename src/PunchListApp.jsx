@@ -1,5 +1,5 @@
 import { useReducer, useRef, useEffect, useCallback, useState } from "react";
-import { idbGetAllPhotos, idbSetPhoto } from "./idb.js";
+import { idbGetAllPhotos, idbSetPhoto, idbClearAll } from "./idb.js";
 import { convertHtmlToImportText, hasStructuredImportHtml } from "./importHtml.js";
 import { readImportFile } from "./importFile.js";
 import { parseImportText } from "./importParser.js";
@@ -241,6 +241,17 @@ function reducer(state, action) {
     case "removeRoom":
       return { ...state, rooms: state.rooms.filter(r => r.id !== action.roomId) };
 
+    case "clearAll":
+      return {
+        project: "Project Name",
+        projectNum: "Proj. # 0000",
+        title: "Punchlist",
+        date: getCurrentDateLabel(),
+        siteConditions: [],
+        generalNotes: [],
+        rooms: [],
+      };
+
     default:
       return state;
   }
@@ -268,6 +279,8 @@ export default function PunchListApp() {
   const [importText, setImportText] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [promptCopyStatus, setPromptCopyStatus] = useState("");
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const clearTimer = useRef(null);
 
   // Load persisted data on mount
   useEffect(() => {
@@ -554,6 +567,23 @@ export default function PunchListApp() {
         </div>
         <div className="toolbar-right">
           {saveStatus && <span className="save-status">{saveStatus}</span>}
+          <button
+            className={`btn ${clearConfirm ? "btn-clear-confirm" : "btn-secondary"}`}
+            onClick={() => {
+              if (!clearConfirm) {
+                setClearConfirm(true);
+                clearTimer.current = setTimeout(() => setClearConfirm(false), 3000);
+              } else {
+                clearTimeout(clearTimer.current);
+                setClearConfirm(false);
+                localStorage.removeItem(STORAGE_KEY);
+                idbClearAll();
+                dispatch({ type: "clearAll" });
+              }
+            }}
+          >
+            {clearConfirm ? "Confirm Clear" : "Clear All"}
+          </button>
           <button className="btn btn-secondary" onClick={() => setImportOpen((open) => !open)}>
             {importOpen ? "Close Import" : "Import Notes"}
           </button>

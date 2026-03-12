@@ -36,6 +36,16 @@ export async function idbSetPhoto(id, value) {
   });
 }
 
+export async function idbClearAll() {
+  const db = await openPhotoDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).clear();
+    tx.oncomplete = resolve;
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
 export async function idbDeletePhoto(id) {
   const db = await openPhotoDB();
   return new Promise((resolve, reject) => {
