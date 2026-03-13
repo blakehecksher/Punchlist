@@ -1,139 +1,110 @@
-// Each row holds 2 items side-by-side. Max rows per page:
-export const ROWS_PAGE_1 = 2;
-export const ROWS_OTHER = 2;
+import { getLayoutMetrics } from "./layout.js";
 
-function chunkPairs(arr) {
-  const pairs = [];
-  for (let i = 0; i < arr.length; i += 2) pairs.push([arr[i], arr[i + 1] || null]);
-  return pairs;
+export const GENERAL_NOTES_SECTION_ID = "__general_notes__";
+
+function buildSections(data) {
+  return [
+    {
+      sectionId: GENERAL_NOTES_SECTION_ID,
+      kind: "generalNotes",
+      title: data.generalNotesTitle || "General",
+      items: data.generalNotes,
+    },
+    ...data.rooms.map((room) => ({
+      sectionId: room.id,
+      kind: "room",
+      title: room.name,
+      items: room.items,
+    })),
+  ];
 }
 
-// Segment types emitted by paginate():
-//   'header'          — page chrome (project/date bar)
-//   'siteConditions'  — site conditions list (page 1 only)
-//   'gnHeader'        — { cont } General Notes header
-//   'gnRows'          — { pairs } general notes, 2 per row
-//   'roomRows'        — { roomId, roomName, cont, pairs } multi-item room
-//   'singleRoomPair'  — { left, right? } two 1-item rooms sharing a row
+function createRowGroup() {
+  return {
+    type: "rowGroup",
+    sections: [],
+    usedCols: 0,
+  };
+}
 
-export function paginate(data) {
+export function paginate(data, layout) {
+  const { columns, firstPageRows, otherPageRows } = getLayoutMetrics(layout);
   const pages = [];
-  let currentPage = [];
-  let rowsUsed = 0;
+  const sections = buildSections(data);
+
   let isFirstPage = true;
+  let rowsUsed = 0;
+  let currentPage = [{ type: "header" }, { type: "siteConditions" }];
+  let openRowGroup = null;
 
-  const rowsForPage = () => isFirstPage ? ROWS_PAGE_1 : ROWS_OTHER;
+  const rowsForPage = () => (isFirstPage ? firstPageRows : otherPageRows);
 
-  currentPage.push({ type: "header" });
-  currentPage.push({ type: "siteConditions" });
-
-  const flush = () => {
+  const flushPage = () => {
     pages.push(currentPage);
     currentPage = [{ type: "header" }];
     rowsUsed = 0;
     isFirstPage = false;
   };
 
-  // General notes — 2 per row
-  const gnPairs = chunkPairs(data.generalNotes);
-  currentPage.push({ type: "gnHeader", cont: false, empty: gnPairs.length === 0 });
-  if (gnPairs.length === 0) {
-    currentPage.push({ type: "gnRows", pairs: [], empty: true });
-  } else {
-    let i = 0;
-    while (i < gnPairs.length) {
-      if (rowsUsed + 1 > rowsForPage()) {
-        flush();
-        currentPage.push({ type: "gnHeader", cont: true, empty: false });
-      }
-      const cap = rowsForPage() - rowsUsed;
-      const batch = gnPairs.slice(i, i + cap);
-      currentPage.push({ type: "gnRows", pairs: batch, empty: false });
-      rowsUsed += batch.length;
-      i += batch.length;
-    }
-  }
-
-  // --- Rooms ---
-  let singleBuffer = null;
-
-  const flushSingleBuffer = () => {
-    if (!singleBuffer) return;
-    if (rowsUsed >= rowsForPage()) flush();
-    currentPage.push({ type: "singleRoomPair", left: singleBuffer, right: null });
+  const flushRowGroup = () => {
+    if (!openRowGroup) return;
+    if (rowsUsed >= rowsForPage()) flushPage();
+    currentPage.push({
+      type: "rowGroup",
+      sections: openRowGroup.sections,
+      columns,
+    });
     rowsUsed += 1;
-    singleBuffer = null;
+    openRowGroup = null;
   };
 
-  data.rooms.forEach((room) => {
-    if (room.items.length === 0) {
-      flushSingleBuffer();
-      if (rowsUsed >= rowsForPage()) flush();
-      currentPage.push({ type: "roomRows", roomId: room.id, roomName: room.name, cont: false, pairs: [] });
+  sections.forEach((section) => {
+    if (section.items.length === 0) {
+      flushRowGroup();
+      currentPage.push({
+        type: "sectionEmpty",
+        section: {
+          ...section,
+          cont: false,
+          span: columns,
+        },
+        columns,
+      });
       return;
     }
 
-    if (room.items.length === 1) {
-      const entry = { roomId: room.id, roomName: room.name, item: room.items[0], cont: false };
-      if (singleBuffer) {
-        if (rowsUsed >= rowsForPage()) flush();
-        currentPage.push({ type: "singleRoomPair", left: singleBuffer, right: entry });
-        rowsUsed += 1;
-        singleBuffer = null;
-      } else {
-        singleBuffer = entry;
-      }
-      return;
-    }
+    let startIndex = 0;
+    let cont = false;
 
-    // Multi-item room (2+ items)
-    flushSingleBuffer();
-
-    const roomPairs = chunkPairs(room.items);
-    const lastPair = roomPairs[roomPairs.length - 1];
-    const hasTrailingSingle = lastPair && lastPair[1] === null;
-    const totalRows = roomPairs.length;
-    const availableRows = rowsForPage() - rowsUsed;
-
-    if (totalRows <= availableRows) {
-      currentPage.push({ type: "roomRows", roomId: room.id, roomName: room.name, cont: false, pairs: roomPairs });
-      rowsUsed += totalRows;
-    } else if (totalRows <= rowsForPage() || totalRows <= ROWS_OTHER) {
-      flush();
-      currentPage.push({ type: "roomRows", roomId: room.id, roomName: room.name, cont: false, pairs: roomPairs });
-      rowsUsed += totalRows;
-    } else {
-      const fullPairs = hasTrailingSingle ? roomPairs.slice(0, -1) : roomPairs;
-      let cont = false;
-      let i = 0;
-
-      while (i < fullPairs.length) {
-        if (rowsUsed >= rowsForPage()) flush();
-        const cap = rowsForPage() - rowsUsed;
-        const batch = fullPairs.slice(i, i + cap);
-        currentPage.push({ type: "roomRows", roomId: room.id, roomName: room.name, cont, pairs: batch });
-        rowsUsed += batch.length;
-        i += batch.length;
-        cont = true;
+    while (startIndex < section.items.length) {
+      if (!openRowGroup) {
+        if (rowsUsed >= rowsForPage()) flushPage();
+        openRowGroup = createRowGroup();
       }
 
-      if (hasTrailingSingle) {
-        const trailingItem = lastPair[0];
-        const entry = { roomId: room.id, roomName: room.name, item: trailingItem, cont };
-        if (singleBuffer) {
-          if (rowsUsed >= rowsForPage()) flush();
-          currentPage.push({ type: "singleRoomPair", left: singleBuffer, right: entry });
-          rowsUsed += 1;
-          singleBuffer = null;
-        } else {
-          singleBuffer = entry;
-        }
+      const available = columns - openRowGroup.usedCols;
+      if (available === 0) {
+        flushRowGroup();
+        continue;
       }
+
+      const span = Math.min(available, section.items.length - startIndex);
+      openRowGroup.sections.push({
+        ...section,
+        cont,
+        span,
+        items: section.items.slice(startIndex, startIndex + span),
+      });
+      openRowGroup.usedCols += span;
+      startIndex += span;
+      cont = true;
+
+      if (openRowGroup.usedCols === columns) flushRowGroup();
     }
   });
 
-  flushSingleBuffer();
-
+  flushRowGroup();
   if (currentPage.length > 1) pages.push(currentPage);
+
   return pages;
 }

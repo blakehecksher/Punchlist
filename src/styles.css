@@ -301,6 +301,12 @@ body {
   flex-direction: column;
   min-height: 0;
 }
+.page-content-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 
 /* ── Document header ── */
 .doc-header {
@@ -480,12 +486,69 @@ body {
 }
 
 /* ── Room headers ── */
-.room-header-row {
+.content-row-group {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 calc(100% / var(--content-rows));
+  min-height: 0;
+}
+.empty-section-group {
+  display: flex;
+  flex-direction: column;
+}
+.empty-section-group + .content-row-group,
+.content-row-group + .empty-section-group,
+.empty-section-group + .empty-section-group {
+  margin-top: 10px;
+}
+.content-row-headers,
+.content-row-items,
+.content-row-actions {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-cols), minmax(0, 1fr));
+  min-width: 0;
+}
+.content-row-items {
+  flex: 1;
+  min-height: 0;
+}
+.content-row-items > :not(:first-child),
+.content-row-actions > :not(:first-child) {
+  margin-left: -1px;
+}
+.content-row-headers > .section-header-cell + .section-header-cell {
+  box-shadow: inset 1px 0 rgba(255, 255, 255, 0.42);
+}
+.section-header-cell {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #923b08;
+  gap: 8px;
+  min-width: 0;
   padding: 5px 8px 5px 10px;
+  color: white;
+}
+.section-header-cell--room {
+  background: #923b08;
+}
+.section-header-cell--general {
+  background: #3a3a3a;
+}
+.section-header-cell--empty {
+  margin-top: 14px;
+}
+.section-header-spacer,
+.row-action-spacer {
+  background: transparent;
+}
+.section-header-title {
+  display: block;
+  width: 100%;
+  font-family: "EB Garamond", serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: white;
+  letter-spacing: 0.02em;
 }
 .room-name-input {
   font-family: "EB Garamond", serif;
@@ -503,23 +566,11 @@ body {
 }
 
 /* ── Item grid ── */
-.item-row {
-  display: flex;
-  flex-direction: row;
-  flex: 1;
-  max-height: 50%;
-}
-.item-row + .item-row {
-  margin-top: -1px;
-}
 .item-card {
   display: flex;
   flex-direction: row;
-  flex: 1;
+  min-width: 0;
   border: 1px solid #ccc;
-}
-.item-card + .item-card {
-  margin-left: -1px;
 }
 .item-card.empty {
   background: transparent;
@@ -528,26 +579,6 @@ body {
 }
 
 /* ── Single-room pair ── */
-.single-room-pair {
-  display: flex;
-  flex-direction: row;
-  flex: 1;
-  max-height: 50%;
-}
-.single-room-half {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-.single-room-half.empty {
-  flex: 1;
-}
-.single-room-half + .single-room-half:not(.empty) {
-  border-left: 1px solid #ccc;
-}
-.single-room-half .item-card {
-  border: 1px solid #ccc;
-}
 
 /* ── Item card content ── */
 .item-text {
@@ -612,14 +643,16 @@ body {
   color: #c0392b !important;
 }
 
-.add-item-cell {
-  border-right: 1px solid #ccc;
-  border-bottom: 1px solid #ccc;
+.content-row-actions {
+  margin-top: -1px;
+}
+.row-action-btn {
+  border: 1px solid #d8ccc4;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 7px;
-  background: none;
+  padding: 7px 8px;
+  background: #fffaf7;
   cursor: pointer;
   color: #923b08;
   font-size: 10px;
@@ -628,10 +661,13 @@ body {
   text-transform: uppercase;
   font-family: "Lato", sans-serif;
   gap: 5px;
-  transition: background 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
-.add-item-cell:hover {
+.row-action-btn:hover {
   background: #fdf5f2;
+  border-color: #923b08;
 }
 
 .add-room-btn {
@@ -678,18 +714,71 @@ body {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
 }
-.general-notes-header {
-  background: #3a3a3a;
-  color: white;
-  font-family: "EB Garamond", serif;
-  font-size: 14px;
-  font-weight: 500;
-  padding: 5px 10px;
-  margin-top: 14px;
-  margin-bottom: 0;
+.item-card--text-only .item-text {
+  border-right: none;
 }
-.general-notes-add-only {
-  border-left: 1px solid #ccc;
+.page--3-3 .section-header-cell,
+.page--3-3 .section-header-cell--empty {
+  padding: 4px 7px 4px 8px;
+}
+.page--4-4 .section-header-cell,
+.page--4-4 .section-header-cell--empty {
+  padding: 3px 6px 3px 7px;
+}
+.page--3-3 .room-name-input,
+.page--3-3 .gn-title-input,
+.page--3-3 .section-header-title {
+  font-size: 13px;
+}
+.page--4-4 .room-name-input,
+.page--4-4 .gn-title-input,
+.page--4-4 .section-header-title {
+  font-size: 12px;
+}
+.page--3-3 .item-text {
+  padding: 6px 7px;
+  gap: 3px;
+}
+.page--4-4 .item-text {
+  padding: 5px 6px;
+  gap: 2px;
+}
+.page--3-3 .item-num,
+.page--3-3 .item-label {
+  font-size: 8px;
+}
+.page--4-4 .item-num,
+.page--4-4 .item-label {
+  font-size: 7px;
+}
+.page--4-4 .item-label {
+  display: none;
+}
+.page--3-3 .item-desc-edit {
+  font-size: 11px;
+  line-height: 1.32;
+  min-height: 0;
+}
+.page--4-4 .item-desc-edit {
+  font-size: 10px;
+  line-height: 1.2;
+  min-height: 0;
+}
+.page--3-3 .photo-drop-hint span {
+  font-size: 8px;
+}
+.page--4-4 .photo-drop-hint span {
+  font-size: 7px;
+}
+.page--3-3 .photo-btn {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+.page--4-4 .photo-btn {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
 }
 
 /* ── Photo cell ── */
@@ -916,6 +1005,54 @@ body {
   background: rgba(255, 80, 80, 0.15);
 }
 
+.sidebar-section {
+  padding: 12px;
+  border-top: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sidebar-density {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.sidebar-density-btn {
+  min-height: 32px;
+  border: 1px solid #444;
+  background: #2b2b2b;
+  color: #ccc;
+  cursor: pointer;
+  font-family: "Lato", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+.sidebar-density-btn:hover {
+  background: #333;
+  border-color: #555;
+}
+.sidebar-density-btn--active {
+  background: #923b08;
+  border-color: #a84510;
+  color: white;
+}
+.sidebar-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ddd;
+  font-size: 12px;
+}
+.sidebar-toggle-row input {
+  accent-color: #923b08;
+}
+
 .sidebar-actions {
   padding: 12px;
   border-top: 1px solid #333;
@@ -990,7 +1127,8 @@ body {
   .sidebar-overlay,
   .import-panel,
   .add-inline,
-  .add-item-cell,
+  .row-action-btn,
+  .content-row-actions,
   .add-room-btn,
   .site-remove,
   .item-remove,
@@ -1027,7 +1165,7 @@ body {
   .photo-drop-hint {
     display: none !important;
   }
-  .general-notes-header.is-empty {
+  .section-header-cell--general.section-header-cell--empty {
     display: none !important;
   }
 }

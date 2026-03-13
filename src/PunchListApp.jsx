@@ -6,9 +6,9 @@ import {
 } from "./importHtml.js";
 import { readImportFile } from "./importFile.js";
 import { parseImportText } from "./importParser.js";
-import { paginate } from "./pagination.js";
+import { DEFAULT_LAYOUT, getLayoutMetrics, normalizeLayout } from "./layout.js";
+import { GENERAL_NOTES_SECTION_ID, paginate } from "./pagination.js";
 import ItemCard from "./ItemCard.jsx";
-import PhotoCell from "./PhotoCell.jsx";
 import ProjectSidebar from "./ProjectSidebar.jsx";
 import {
   loadIndex,
@@ -21,8 +21,6 @@ import {
   migrateLegacy,
 } from "./projectStore.js";
 import "./styles.css";
-
-// ── Constants ──
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const normalizeRoomKey = (name) =>
@@ -41,16 +39,7 @@ const getCurrentDateLabel = (date = new Date()) =>
     day: "numeric",
     year: "numeric",
   }).format(date);
-/* Legacy prompt block removed.
 
-Clean up the language — precise and consistent, but don't change my meaning
-Keep my structure exactly — dash bullets, room name before room number, sub-bullets where I have them
-Consistent title case for room names (e.g. "Primary Bedroom" not "Pri Bed")
-Order rooms by room number, ascending
-Paste the result as plain text — no file, no extra markdown formatting
-
-[paste your notes below this line]
-*/
 const IMPORT_CLEANUP_PROMPT = `I will paste raw punch list notes below. Rewrite them so they can be imported into a punch list tool.
 
 Follow these rules:
@@ -99,32 +88,43 @@ function summarizeImport(parsed) {
   const gnCount = parsed.generalNotes.length;
   const parts = [];
 
-  if (siteConditionCount > 0)
+  if (siteConditionCount > 0) {
     parts.push(
       `${siteConditionCount} site condition${siteConditionCount === 1 ? "" : "s"}`,
     );
-  if (gnCount > 0)
+  }
+  if (gnCount > 0) {
     parts.push(`${gnCount} general note${gnCount === 1 ? "" : "s"}`);
-  if (roomItemCount > 0)
+  }
+  if (roomItemCount > 0) {
     parts.push(
       `${roomItemCount} room item${roomItemCount === 1 ? "" : "s"} across ${roomCount} room${roomCount === 1 ? "" : "s"}`,
     );
+  }
 
   return parts.length > 0
     ? `Imported ${parts.join(" and ")}.`
     : "Nothing imported.";
 }
 
-// ── Initial data ──
+function makeBlankProjectData() {
+  return {
+    project: "Project Name",
+    projectNum: "Proj. # 0000",
+    title: "Punchlist",
+    date: getCurrentDateLabel(),
+    firm: "Firm Name",
+    punchlistDate: "",
+    generalNotesTitle: "General",
+    layout: { ...DEFAULT_LAYOUT },
+    siteConditions: [],
+    generalNotes: [],
+    rooms: [],
+  };
+}
 
 const INITIAL_DATA = {
-  project: "Project Name",
-  projectNum: "Proj. # 0000",
-  title: "Punchlist",
-  date: getCurrentDateLabel(),
-  firm: "Firm Name",
-  punchlistDate: "",
-  generalNotesTitle: "General",
+  ...makeBlankProjectData(),
   siteConditions: [
     "Example condition: final painting touch-ups are in progress",
     "Example condition: flooring protection remains in place in main hall",
@@ -274,40 +274,73 @@ const INITIAL_DATA = {
   ],
 };
 
-// ── Helpers ──
+function normalizeStoredData(stored, photos = {}) {
+  const mergePhotos = (items = []) =>
+    items.map((item) => {
+      const entry = photos[item.id];
+      if (!entry) return { ...item, photo: null, photoPosition: null };
+      if (typeof entry === "string")
+        return { ...item, photo: entry, photoPosition: null };
+      return {
+        ...item,
+        photo: entry.dataUrl,
+        photoPosition: entry.position ?? null,
+      };
+    });
 
-const stripPhotos = (data) => ({
-  ...data,
-  generalNotes: data.generalNotes.map((i) => ({
-    ...i,
-    photo: null,
-    photoPosition: null,
-  })),
-  rooms: data.rooms.map((r) => ({
-    ...r,
-    items: r.items.map((i) => ({ ...i, photo: null, photoPosition: null })),
-  })),
-});
-
-function mapItem(data, id, fn) {
-  // Update a single item by id across generalNotes and rooms
-  const inGN = data.generalNotes.some((i) => i.id === id);
-  if (inGN) {
-    return {
-      ...data,
-      generalNotes: data.generalNotes.map((i) => (i.id === id ? fn(i) : i)),
-    };
-  }
   return {
-    ...data,
-    rooms: data.rooms.map((r) => ({
-      ...r,
-      items: r.items.map((i) => (i.id === id ? fn(i) : i)),
+    ...makeBlankProjectData(),
+    ...stored,
+    layout: normalizeLayout(stored?.layout),
+    firm: stored?.firm ?? "Firm Name",
+    punchlistDate: stored?.punchlistDate ?? "",
+    generalNotesTitle: stored?.generalNotesTitle ?? "General",
+    siteConditions: stored?.siteConditions || [],
+    generalNotes: mergePhotos(stored?.generalNotes || []),
+    rooms: (stored?.rooms || []).map((room) => ({
+      ...room,
+      items: mergePhotos(room.items || []),
     })),
   };
 }
 
-// ── Reducer ──
+const stripPhotos = (data) => ({
+  ...data,
+  layout: normalizeLayout(data.layout),
+  generalNotes: data.generalNotes.map((item) => ({
+    ...item,
+    photo: null,
+    photoPosition: null,
+  })),
+  rooms: data.rooms.map((room) => ({
+    ...room,
+    items: room.items.map((item) => ({
+      ...item,
+      photo: null,
+      photoPosition: null,
+    })),
+  })),
+});
+
+function mapItem(data, id, fn) {
+  const inGN = data.generalNotes.some((item) => item.id === id);
+  if (inGN) {
+    return {
+      ...data,
+      generalNotes: data.generalNotes.map((item) =>
+        item.id === id ? fn(item) : item,
+      ),
+    };
+  }
+
+  return {
+    ...data,
+    rooms: data.rooms.map((room) => ({
+      ...room,
+      items: room.items.map((item) => (item.id === id ? fn(item) : item)),
+    })),
+  };
+}
 
 function reducer(state, action) {
   switch (action.type) {
@@ -317,46 +350,58 @@ function reducer(state, action) {
     case "setField":
       return { ...state, [action.field]: action.value };
 
+    case "setLayout":
+      return {
+        ...state,
+        layout: normalizeLayout({
+          ...normalizeLayout(state.layout),
+          ...action.layout,
+        }),
+      };
+
     case "setSiteCondition": {
-      const sc = [...state.siteConditions];
-      sc[action.index] = action.value;
-      return { ...state, siteConditions: sc };
+      const next = [...state.siteConditions];
+      next[action.index] = action.value;
+      return { ...state, siteConditions: next };
     }
+
     case "removeSiteCondition":
       return {
         ...state,
         siteConditions: state.siteConditions.filter(
-          (_, i) => i !== action.index,
+          (_, index) => index !== action.index,
         ),
       };
+
     case "addSiteCondition":
       return { ...state, siteConditions: [...state.siteConditions, ""] };
 
     case "updateItem":
-      return mapItem(state, action.id, (i) => ({
-        ...i,
+      return mapItem(state, action.id, (item) => ({
+        ...item,
         [action.field]: action.value,
       }));
 
     case "setPhoto":
-      return mapItem(state, action.id, (i) => ({
-        ...i,
+      return mapItem(state, action.id, (item) => ({
+        ...item,
         photo: action.dataUrl,
         photoPosition: action.position,
       }));
 
     case "setPhotoPosition":
-      return mapItem(state, action.id, (i) => ({
-        ...i,
+      return mapItem(state, action.id, (item) => ({
+        ...item,
         photoPosition: action.position,
       }));
 
     case "addGeneralNote":
       return { ...state, generalNotes: [...state.generalNotes, makeItem()] };
+
     case "removeGeneralNote":
       return {
         ...state,
-        generalNotes: state.generalNotes.filter((i) => i.id !== action.id),
+        generalNotes: state.generalNotes.filter((item) => item.id !== action.id),
       };
 
     case "importNotes": {
@@ -408,24 +453,22 @@ function reducer(state, action) {
     case "addRoomItem":
       return {
         ...state,
-        rooms: state.rooms.map((r) =>
-          r.id !== action.roomId
-            ? r
-            : {
-                ...r,
-                items: [...r.items, makeItem()],
-              },
+        rooms: state.rooms.map((room) =>
+          room.id !== action.roomId
+            ? room
+            : { ...room, items: [...room.items, makeItem()] },
         ),
       };
+
     case "removeRoomItem":
       return {
         ...state,
-        rooms: state.rooms.map((r) =>
-          r.id !== action.roomId
-            ? r
+        rooms: state.rooms.map((room) =>
+          room.id !== action.roomId
+            ? room
             : {
-                ...r,
-                items: r.items.filter((i) => i.id !== action.itemId),
+                ...room,
+                items: room.items.filter((item) => item.id !== action.itemId),
               },
         ),
       };
@@ -433,10 +476,13 @@ function reducer(state, action) {
     case "setRoomName":
       return {
         ...state,
-        rooms: state.rooms.map((r) =>
-          r.id !== action.roomId ? r : { ...r, name: action.name },
+        rooms: state.rooms.map((room) =>
+          room.id !== action.roomId
+            ? room
+            : { ...room, name: action.name },
         ),
       };
+
     case "addRoom":
       return {
         ...state,
@@ -445,25 +491,15 @@ function reducer(state, action) {
           { id: uid(), name: "Room Name", items: [makeItem()] },
         ],
       };
+
     case "removeRoom":
       return {
         ...state,
-        rooms: state.rooms.filter((r) => r.id !== action.roomId),
+        rooms: state.rooms.filter((room) => room.id !== action.roomId),
       };
 
     case "clearAll":
-      return {
-        project: "Project Name",
-        projectNum: "Proj. # 0000",
-        title: "Punchlist",
-        date: getCurrentDateLabel(),
-        firm: "Firm Name",
-        punchlistDate: "",
-        generalNotesTitle: "General",
-        siteConditions: [],
-        generalNotes: [],
-        rooms: [],
-      };
+      return makeBlankProjectData();
 
     default:
       return state;
@@ -487,11 +523,9 @@ function DocumentIcon() {
   );
 }
 
-// ── App ──
-
 export default function PunchListApp() {
   const [data, dispatch] = useReducer(reducer, INITIAL_DATA);
-  const [saveStatus, setSaveStatus] = useReducer((_, v) => v, "");
+  const [saveStatus, setSaveStatus] = useReducer((_, value) => value, "");
   const saveTimer = useRef(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
@@ -500,28 +534,28 @@ export default function PunchListApp() {
   const [clearConfirm, setClearConfirm] = useState(false);
   const clearTimer = useRef(null);
 
-  // Project management state
   const [activeId, setActiveIdState] = useState(null);
   const [projects, setProjects] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
-    try { return localStorage.getItem("pl_sidebar_open") === "true"; } catch { return false; }
+    try {
+      return localStorage.getItem("pl_sidebar_open") === "true";
+    } catch {
+      return false;
+    }
   });
   const activeIdRef = useRef(null);
 
   const refreshIndex = () => setProjects(loadIndex());
 
-  // ── Load active project on mount (with legacy migration) ──
   useEffect(() => {
     (async () => {
       try {
-        // Migrate old single-project data if needed
         migrateLegacy();
 
         let id = getActiveId();
         const index = loadIndex();
 
-        // If no active ID or it's been deleted, pick the first in index or create blank
-        if (!id || !index.find((e) => e.id === id)) {
+        if (!id || !index.find((entry) => entry.id === id)) {
           if (index.length > 0) {
             id = index[index.length - 1].id;
           } else {
@@ -537,42 +571,16 @@ export default function PunchListApp() {
         const stored = loadProjectData(id);
         if (stored) {
           const photos = await idbGetAllPhotos(id);
-          const mergePhotos = (items) =>
-            items.map((i) => {
-              const entry = photos[i.id];
-              if (!entry) return { ...i, photo: null, photoPosition: null };
-              if (typeof entry === "string")
-                return { ...i, photo: entry, photoPosition: null };
-              return {
-                ...i,
-                photo: entry.dataUrl,
-                photoPosition: entry.position ?? null,
-              };
-            });
-          dispatch({
-            type: "load",
-            data: {
-              ...stored,
-              firm: stored.firm ?? "Firm Name",
-              punchlistDate: stored.punchlistDate ?? "",
-              generalNotesTitle: stored.generalNotesTitle ?? "General",
-              generalNotes: mergePhotos(stored.generalNotes || []),
-              rooms: (stored.rooms || []).map((r) => ({
-                ...r,
-                items: mergePhotos(r.items || []),
-              })),
-            },
-          });
+          dispatch({ type: "load", data: normalizeStoredData(stored, photos) });
           setSaveStatus("Loaded");
           setTimeout(() => setSaveStatus(""), 1500);
         }
       } catch {
-        /* corrupt storage — start fresh */
+        // Corrupt storage: keep the in-memory defaults.
       }
     })();
   }, []);
 
-  // ── Debounced auto-save ──
   useEffect(() => {
     if (!activeIdRef.current) return;
     clearTimeout(saveTimer.current);
@@ -580,95 +588,83 @@ export default function PunchListApp() {
       try {
         saveProjectData(activeIdRef.current, stripPhotos(data));
         refreshIndex();
-        setSaveStatus("Saved ✓");
+        setSaveStatus("Saved");
         setTimeout(() => setSaveStatus(""), 1500);
       } catch {
-        /* quota exceeded */
+        // Quota exceeded.
       }
     }, 800);
     return () => clearTimeout(saveTimer.current);
   }, [data]);
 
-  // Persist sidebar open state
   useEffect(() => {
-    try { localStorage.setItem("pl_sidebar_open", sidebarOpen); } catch { /* */ }
+    try {
+      localStorage.setItem("pl_sidebar_open", sidebarOpen);
+    } catch {
+      // Ignore storage failures for sidebar state.
+    }
   }, [sidebarOpen]);
 
-  // ── Photo position changes ──
   const handlePositionChange = useCallback(
     (itemId, position) => {
       dispatch({ type: "setPhotoPosition", id: itemId, position });
+
       const findPhoto = () => {
-        for (const gn of data.generalNotes)
-          if (gn.id === itemId) return gn.photo;
-        for (const r of data.rooms)
-          for (const it of r.items) if (it.id === itemId) return it.photo;
+        for (const note of data.generalNotes) {
+          if (note.id === itemId) return note.photo;
+        }
+        for (const room of data.rooms) {
+          for (const item of room.items) {
+            if (item.id === itemId) return item.photo;
+          }
+        }
         return null;
       };
+
       const dataUrl = findPhoto();
-      if (dataUrl && activeIdRef.current)
-        idbSetPhoto(activeIdRef.current, itemId, { dataUrl, position }).catch(() => {});
+      if (dataUrl && activeIdRef.current) {
+        idbSetPhoto(activeIdRef.current, itemId, { dataUrl, position }).catch(
+          () => {},
+        );
+      }
     },
     [data],
   );
 
-  // ── Project switching ──
-  const switchToProject = useCallback(async (id) => {
-    // Save current before switching
-    if (activeIdRef.current) {
-      saveProjectData(activeIdRef.current, stripPhotos(data));
-    }
-    activeIdRef.current = id;
-    setActiveIdState(id);
-    setActiveId(id);
-
-    try {
-      const stored = loadProjectData(id);
-      if (stored) {
-        const photos = await idbGetAllPhotos(id);
-        const mergePhotos = (items) =>
-          items.map((i) => {
-            const entry = photos[i.id];
-            if (!entry) return { ...i, photo: null, photoPosition: null };
-            if (typeof entry === "string")
-              return { ...i, photo: entry, photoPosition: null };
-            return { ...i, photo: entry.dataUrl, photoPosition: entry.position ?? null };
-          });
-        dispatch({
-          type: "load",
-          data: {
-            ...stored,
-            firm: stored.firm ?? "Firm Name",
-            punchlistDate: stored.punchlistDate ?? "",
-            generalNotesTitle: stored.generalNotesTitle ?? "General",
-            generalNotes: mergePhotos(stored.generalNotes || []),
-            rooms: (stored.rooms || []).map((r) => ({
-              ...r,
-              items: mergePhotos(r.items || []),
-            })),
-          },
-        });
+  const switchToProject = useCallback(
+    async (id) => {
+      if (activeIdRef.current) {
+        saveProjectData(activeIdRef.current, stripPhotos(data));
       }
-    } catch { /* corrupt */ }
-    refreshIndex();
-  }, [data]);
+
+      activeIdRef.current = id;
+      setActiveIdState(id);
+      setActiveId(id);
+
+      try {
+        const stored = loadProjectData(id);
+        if (stored) {
+          const photos = await idbGetAllPhotos(id);
+          dispatch({
+            type: "load",
+            data: normalizeStoredData(stored, photos),
+          });
+        }
+      } catch {
+        // Ignore corrupt storage.
+      }
+
+      refreshIndex();
+    },
+    [data],
+  );
 
   const handleNewProject = useCallback(() => {
     if (activeIdRef.current) {
       saveProjectData(activeIdRef.current, stripPhotos(data));
     }
-    const blankData = {
-      project: "Project Name",
-      projectNum: "Proj. # 0000",
-      title: "Punchlist",
-      date: getCurrentDateLabel(),
-      firm: "Firm Name",
-      punchlistDate: "",
-      generalNotesTitle: "General",
-      siteConditions: [],
-      generalNotes: [],
-      rooms: [],
-    };
+
+    const blankData = makeBlankProjectData();
     const id = createProject(blankData);
     activeIdRef.current = id;
     setActiveIdState(id);
@@ -681,6 +677,7 @@ export default function PunchListApp() {
     if (activeIdRef.current) {
       saveProjectData(activeIdRef.current, stripPhotos(data));
     }
+
     const copy = {
       ...stripPhotos(data),
       project: `${data.project} (copy)`,
@@ -689,7 +686,10 @@ export default function PunchListApp() {
     activeIdRef.current = id;
     setActiveIdState(id);
     setActiveId(id);
-    dispatch({ type: "load", data: { ...copy, date: getCurrentDateLabel() } });
+    dispatch({
+      type: "load",
+      data: { ...copy, date: getCurrentDateLabel() },
+    });
     refreshIndex();
   }, [data]);
 
@@ -773,346 +773,293 @@ export default function PunchListApp() {
     }
   }, []);
 
-  const pages = paginate(data);
+  const layout = normalizeLayout(data.layout);
+  const layoutMetrics = getLayoutMetrics(layout);
+  const pages = paginate(data, layout);
 
-  // Item numbering maps
   const gnItemNums = {};
-  data.generalNotes.forEach((it, i) => {
-    gnItemNums[it.id] = i + 1;
+  data.generalNotes.forEach((item, index) => {
+    gnItemNums[item.id] = index + 1;
   });
+
   const roomItemNums = {};
   data.rooms.forEach((room) => {
-    room.items.forEach((it, i) => {
-      roomItemNums[it.id] = i + 1;
+    room.items.forEach((item, index) => {
+      roomItemNums[item.id] = index + 1;
     });
   });
 
-  // Identify first/last segments per room for add/remove button placement
-  const allSegs = pages.flatMap((pg) => pg);
-  const lastGnRowsSeg =
-    [...allSegs].reverse().find((s) => s.type === "gnRows") ?? null;
-  const lastRoomSeg = {};
-  const firstRoomSeg = {};
-  allSegs.forEach((seg) => {
-    if (seg.type === "roomRows") {
-      lastRoomSeg[seg.roomId] = seg;
-      if (!firstRoomSeg[seg.roomId]) firstRoomSeg[seg.roomId] = seg;
-    }
-    if (seg.type === "singleRoomPair") {
-      [seg.left, seg.right].forEach((entry) => {
-        if (!entry) return;
-        lastRoomSeg[entry.roomId] = seg;
-        if (!firstRoomSeg[entry.roomId]) firstRoomSeg[entry.roomId] = seg;
-      });
-    }
+  const firstSectionChunk = {};
+  const lastSectionChunk = {};
+  pages.flatMap((page) => page).forEach((seg) => {
+    const chunks =
+      seg.type === "rowGroup"
+        ? seg.sections
+        : seg.type === "sectionEmpty"
+          ? [seg.section]
+          : [];
+    chunks.forEach((chunk) => {
+      lastSectionChunk[chunk.sectionId] = chunk;
+      if (!firstSectionChunk[chunk.sectionId]) {
+        firstSectionChunk[chunk.sectionId] = chunk;
+      }
+    });
   });
 
-  // ── Segment renderer ──
+  const getSectionItemNumber = (section, item) =>
+    section.sectionId === GENERAL_NOTES_SECTION_ID
+      ? gnItemNums[item.id]
+      : roomItemNums[item.id];
 
-  const renderSeg = (seg, segIdx, contentSegs) => {
-    if (seg.type === "gnHeader") {
-      const nextSeg = contentSegs[segIdx + 1];
-      const isHalfWidth =
-        nextSeg?.type === "gnRows" &&
-        nextSeg.pairs.length === 1 &&
-        nextSeg.pairs[0][1] === null;
-      return [
+  const renderHeaderCell = (section, key) => {
+    const headerClass = [
+      "section-header-cell",
+      section.kind === "generalNotes"
+        ? "section-header-cell--general"
+        : "section-header-cell--room",
+      section.items.length === 0 ? "section-header-cell--empty" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    if (section.kind === "generalNotes") {
+      return (
         <div
-          key={`gnHeader-${segIdx}`}
-          className={`general-notes-header${seg.empty ? " is-empty" : ""}`}
-          style={isHalfWidth ? { width: "50%" } : undefined}
+          key={key}
+          className={headerClass}
+          style={{ gridColumn: `span ${section.span}` }}
         >
-          {seg.cont ? (
-            <span>{data.generalNotesTitle || "General"} (cont&apos;d)</span>
+          {section.cont ? (
+            <span className="section-header-title">
+              {data.generalNotesTitle || "General"} (cont&apos;d)
+            </span>
           ) : (
             <input
               className="gn-title-input"
               value={data.generalNotesTitle ?? "General"}
-              onChange={(e) =>
+              onChange={(event) =>
                 dispatch({
                   type: "setField",
                   field: "generalNotesTitle",
-                  value: e.target.value,
+                  value: event.target.value,
                 })
               }
             />
           )}
-        </div>,
-      ];
-    }
-
-    if (seg.type === "gnRows") {
-      const showAdd = seg === lastGnRowsSeg;
-      const elements = seg.pairs.map((pair, pi) => (
-        <div key={`gn-row-${segIdx}-${pi}`} className="item-row">
-          {pair.map((item, ci) =>
-            item ? (
-              <ItemCard
-                key={item.id}
-                projectId={activeIdRef.current}
-                item={item}
-                num={gnItemNums[item.id]}
-                onDescChange={(v) =>
-                  dispatch({
-                    type: "updateItem",
-                    id: item.id,
-                    field: "description",
-                    value: v,
-                  })
-                }
-                onPhoto={(url, pos) =>
-                  dispatch({
-                    type: "setPhoto",
-                    id: item.id,
-                    dataUrl: url,
-                    position: pos,
-                  })
-                }
-                onRemove={() =>
-                  dispatch({ type: "removeGeneralNote", id: item.id })
-                }
-                onPositionChange={(pos) => handlePositionChange(item.id, pos)}
-              />
-            ) : (
-              <div key={ci} className="item-card empty" />
-            ),
-          )}
         </div>
-      ));
-      if (showAdd) {
-        elements.push(
-          <button
-            key="add-gn"
-            className={`add-item-cell${seg.empty ? " general-notes-add-only" : ""}`}
-            onClick={() => dispatch({ type: "addGeneralNote" })}
-          >
-            ＋ Add note
-          </button>,
-        );
-      }
-      return elements;
-    }
-
-    if (seg.type === "roomRows") {
-      const { roomId, roomName, cont, pairs } = seg;
-      const showAddItem = seg === lastRoomSeg[roomId];
-      const showRemove = seg === firstRoomSeg[roomId];
-      const isHalfWidth = pairs.length === 1 && pairs[0][1] === null;
-
-      const elements = [];
-      elements.push(
-        <div
-          key={`${roomId}-hdr-${segIdx}`}
-          className="room-header-row"
-          style={isHalfWidth ? { width: "50%" } : undefined}
-        >
-          <input
-            className="room-name-input"
-            value={cont ? `${roomName}  (cont'd)` : roomName}
-            readOnly={cont}
-            onChange={(e) =>
-              !cont &&
-              dispatch({ type: "setRoomName", roomId, name: e.target.value })
-            }
-            placeholder="Room name…"
-          />
-          {showRemove && (
-            <button
-              className="btn-danger"
-              onClick={() => dispatch({ type: "removeRoom", roomId })}
-            >
-              Remove
-            </button>
-          )}
-        </div>,
       );
-      pairs.forEach((pair, pi) => {
-        elements.push(
-          <div key={`${roomId}-row-${segIdx}-${pi}`} className="item-row">
-            {pair.map((item, ci) =>
-              item ? (
-                <ItemCard
-                  key={item.id}
-                  projectId={activeIdRef.current}
-                  item={item}
-                  num={roomItemNums[item.id]}
-                  onDescChange={(v) =>
-                    dispatch({
-                      type: "updateItem",
-                      id: item.id,
-                      field: "description",
-                      value: v,
-                    })
-                  }
-                  onPhoto={(url, pos) =>
-                    dispatch({
-                      type: "setPhoto",
-                      id: item.id,
-                      dataUrl: url,
-                      position: pos,
-                    })
-                  }
-                  onRemove={() =>
-                    dispatch({
-                      type: "removeRoomItem",
-                      roomId,
-                      itemId: item.id,
-                    })
-                  }
-                  onPositionChange={(pos) => handlePositionChange(item.id, pos)}
-                />
-              ) : (
-                <div key={ci} className="item-card empty" />
-              ),
-            )}
-          </div>,
-        );
-      });
-      if (showAddItem) {
-        elements.push(
+    }
+
+    const showRemove = firstSectionChunk[section.sectionId] === section;
+    return (
+      <div
+        key={key}
+        className={headerClass}
+        style={{ gridColumn: `span ${section.span}` }}
+      >
+        <input
+          className="room-name-input"
+          value={section.cont ? `${section.title}  (cont'd)` : section.title}
+          readOnly={section.cont}
+          onChange={(event) =>
+            !section.cont &&
+            dispatch({
+              type: "setRoomName",
+              roomId: section.sectionId,
+              name: event.target.value,
+            })
+          }
+          placeholder="Room name..."
+        />
+        {showRemove && (
           <button
-            key={`add-${roomId}`}
-            className="add-item-cell"
-            onClick={() => dispatch({ type: "addRoomItem", roomId })}
+            className="btn-danger"
+            onClick={() =>
+              dispatch({ type: "removeRoom", roomId: section.sectionId })
+            }
           >
-            ＋ Add item
-          </button>,
-        );
-      }
-      return elements;
-    }
-
-    if (seg.type === "singleRoomPair") {
-      const renderHalf = (entry, side) => {
-        if (!entry)
-          return (
-            <div key={`empty-${side}`} className="single-room-half empty" />
-          );
-        const { roomId, roomName, item, cont: entryCont } = entry;
-        const isFirst = firstRoomSeg[roomId] === seg;
-        return (
-          <div key={`${roomId}-${side}`} className="single-room-half">
-            <div className="room-header-row">
-              <input
-                className="room-name-input"
-                value={entryCont ? `${roomName}  (cont'd)` : roomName}
-                readOnly={entryCont}
-                onChange={(e) =>
-                  !entryCont &&
-                  dispatch({
-                    type: "setRoomName",
-                    roomId,
-                    name: e.target.value,
-                  })
-                }
-                placeholder="Room name…"
-              />
-              {isFirst && (
-                <button
-                  className="btn-danger"
-                  onClick={() => dispatch({ type: "removeRoom", roomId })}
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-            <div className="item-card" style={{ flex: 1 }}>
-              <div className="item-text">
-                <div className="item-num">
-                  Item #{String(roomItemNums[item.id]).padStart(2, "0")}
-                </div>
-                <div className="item-label">Description:</div>
-                <textarea
-                  className="item-desc-edit"
-                  value={item.description}
-                  onChange={(e) =>
-                    dispatch({
-                      type: "updateItem",
-                      id: item.id,
-                      field: "description",
-                      value: e.target.value,
-                    })
-                  }
-                  placeholder="Click here to enter description"
-                  rows={4}
-                />
-                <button
-                  className="item-remove"
-                  onClick={() =>
-                    dispatch({
-                      type: "removeRoomItem",
-                      roomId,
-                      itemId: item.id,
-                    })
-                  }
-                  title="Remove item"
-                >
-                  ✕
-                </button>
-              </div>
-              <PhotoCell
-                projectId={activeIdRef.current}
-                itemId={item.id}
-                photo={item.photo}
-                position={item.photoPosition}
-                onPhoto={(url, pos) =>
-                  dispatch({
-                    type: "setPhoto",
-                    id: item.id,
-                    dataUrl: url,
-                    position: pos,
-                  })
-                }
-                onRemove={() =>
-                  dispatch({
-                    type: "setPhoto",
-                    id: item.id,
-                    dataUrl: null,
-                    position: null,
-                  })
-                }
-                onPositionChange={(pos) => handlePositionChange(item.id, pos)}
-              />
-            </div>
-            <button
-              className="add-item-cell"
-              onClick={() => dispatch({ type: "addRoomItem", roomId })}
-            >
-              ＋ Add item
-            </button>
-          </div>
-        );
-      };
-      return [
-        <div key={`srp-${segIdx}`} className="single-room-pair">
-          {renderHalf(seg.left, "left")}
-          {renderHalf(seg.right, "right")}
-        </div>,
-      ];
-    }
-
-    return [];
+            Remove
+          </button>
+        )}
+      </div>
+    );
   };
 
-  // ── Render ──
+  const renderItemCell = (section, item) => (
+    <ItemCard
+      key={item.id}
+      projectId={activeIdRef.current}
+      item={item}
+      num={getSectionItemNumber(section, item)}
+      density={layout.density}
+      showPhotos={layout.showPhotos}
+      onDescChange={(value) =>
+        dispatch({
+          type: "updateItem",
+          id: item.id,
+          field: "description",
+          value,
+        })
+      }
+      onPhoto={(url, position) =>
+        dispatch({
+          type: "setPhoto",
+          id: item.id,
+          dataUrl: url,
+          position,
+        })
+      }
+      onRemove={() =>
+        dispatch(
+          section.sectionId === GENERAL_NOTES_SECTION_ID
+            ? { type: "removeGeneralNote", id: item.id }
+            : {
+                type: "removeRoomItem",
+                roomId: section.sectionId,
+                itemId: item.id,
+              },
+        )
+      }
+      onPositionChange={(position) => handlePositionChange(item.id, position)}
+    />
+  );
+
+  const renderActionCell = (section, key) => {
+    const isLast = lastSectionChunk[section.sectionId] === section;
+    if (!isLast) {
+      return (
+        <div
+          key={key}
+          className="row-action-spacer"
+          style={{ gridColumn: `span ${section.span}` }}
+        />
+      );
+    }
+
+    if (section.sectionId === GENERAL_NOTES_SECTION_ID) {
+      return (
+        <button
+          key={key}
+          className="row-action-btn"
+          style={{ gridColumn: `span ${section.span}` }}
+          onClick={() => dispatch({ type: "addGeneralNote" })}
+        >
+          + Add note
+        </button>
+      );
+    }
+
+    return (
+      <button
+        key={key}
+        className="row-action-btn"
+        style={{ gridColumn: `span ${section.span}` }}
+        onClick={() =>
+          dispatch({ type: "addRoomItem", roomId: section.sectionId })
+        }
+      >
+        + Add item
+      </button>
+    );
+  };
+
+  const renderSpacer = (span, key, className) => {
+    if (span <= 0) return null;
+    return (
+      <div
+        key={key}
+        className={className}
+        style={{ gridColumn: `span ${span}` }}
+      />
+    );
+  };
+
+  const renderRowGroup = (seg, key) => {
+    const usedCols = seg.sections.reduce((sum, section) => sum + section.span, 0);
+    const remainingCols = layoutMetrics.columns - usedCols;
+    const hasActions = seg.sections.some(
+      (section) => lastSectionChunk[section.sectionId] === section,
+    );
+
+    return (
+      <div key={key} className="content-row-group">
+        <div className="content-row-headers">
+          {seg.sections.map((section, index) =>
+            renderHeaderCell(section, `${key}-header-${index}`),
+          )}
+          {renderSpacer(
+            remainingCols,
+            `${key}-header-spacer`,
+            "section-header-spacer",
+          )}
+        </div>
+        <div className="content-row-items">
+          {seg.sections.flatMap((section) =>
+            section.items.map((item) => renderItemCell(section, item)),
+          )}
+          {renderSpacer(remainingCols, `${key}-item-spacer`, "item-card empty")}
+        </div>
+        {hasActions && (
+          <div className="content-row-actions">
+            {seg.sections.map((section, index) =>
+              renderActionCell(section, `${key}-action-${index}`),
+            )}
+            {renderSpacer(
+              remainingCols,
+              `${key}-action-spacer`,
+              "row-action-spacer",
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderEmptySection = (seg, key) => {
+    const section = seg.section;
+    const isLast = lastSectionChunk[section.sectionId] === section;
+
+    return (
+      <div key={key} className="empty-section-group">
+        <div className="content-row-headers">
+          {renderHeaderCell(section, `${key}-header`)}
+        </div>
+        {isLast && (
+          <div className="content-row-actions">
+            {renderActionCell(section, `${key}-action`)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const pageClassName = [
+    "page",
+    `page--${layout.density.replace("x", "-")}`,
+    layout.showPhotos ? "page--with-photos" : "page--text-only",
+  ].join(" ");
 
   return (
     <div className={`app${sidebarOpen ? " app--sidebar-open" : ""}`}>
       <ProjectSidebar
         isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen((v) => !v)}
+        onToggle={() => setSidebarOpen((value) => !value)}
         projects={projects}
         activeId={activeId}
         onOpen={switchToProject}
         onNew={handleNewProject}
         onDuplicate={handleDuplicate}
         onDelete={handleDeleteProject}
+        layout={layout}
+        onLayoutChange={(layoutUpdate) =>
+          dispatch({ type: "setLayout", layout: layoutUpdate })
+        }
       />
 
       <div className="toolbar">
         <div className="toolbar-left">
           <span className="toolbar-title">
-            {data.project} — {data.title} — {data.date}
+            {data.project} - {data.title} - {data.date}
           </span>
         </div>
         <div className="toolbar-right">
@@ -1129,7 +1076,9 @@ export default function PunchListApp() {
               } else {
                 clearTimeout(clearTimer.current);
                 setClearConfirm(false);
-                if (activeIdRef.current) idbClearAll(activeIdRef.current).catch(() => {});
+                if (activeIdRef.current) {
+                  idbClearAll(activeIdRef.current).catch(() => {});
+                }
                 dispatch({ type: "clearAll" });
               }
             }}
@@ -1170,7 +1119,7 @@ export default function PunchListApp() {
 
           <div className="import-panel-body">
             <p className="import-helper">
-              Format your notes as a bulleted outline — room name and number as
+              Format your notes as a bulleted outline - room name and number as
               the top-level item, punch list items nested beneath. A{" "}
               <strong>Site Conditions</strong> section will import into Site
               Conditions. A <strong>General Notes</strong> section will import
@@ -1184,11 +1133,11 @@ export default function PunchListApp() {
             <div className="import-tip-row">
               <p className="import-helper import-tip">
                 Tip: Copy this prompt into a chatbot, paste your raw notes after
-                it, then paste the chatbot's cleaned bullet list here.
+                it, then paste the chatbot&apos;s cleaned bullet list here.
               </p>
               <button className="copy-prompt-btn" onClick={handleCopyPrompt}>
                 Copy prompt
-                {promptCopyStatus ? ` ${promptCopyStatus}` : " ↓"}
+                {promptCopyStatus ? ` ${promptCopyStatus}` : " ->"}
               </button>
             </div>
             <pre className="import-prompt">{IMPORT_CLEANUP_PROMPT}</pre>
@@ -1227,36 +1176,35 @@ export default function PunchListApp() {
       <div className="pages">
         {pages.map((pageSegs, pageIdx) => {
           const headerSegs = pageSegs.filter(
-            (s) => s.type === "header" || s.type === "siteConditions",
+            (seg) => seg.type === "header" || seg.type === "siteConditions",
           );
           const contentSegs = pageSegs.filter(
-            (s) => s.type !== "header" && s.type !== "siteConditions",
+            (seg) => seg.type !== "header" && seg.type !== "siteConditions",
           );
 
           return (
-            <div key={pageIdx} className="page">
-              {/* Document header — all fields editable */}
+            <div key={pageIdx} className={pageClassName}>
               <div className="doc-header">
                 <div className="doc-header-left">
                   <input
                     className="doc-header-project"
                     value={data.project}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       dispatch({
                         type: "setField",
                         field: "project",
-                        value: e.target.value,
+                        value: event.target.value,
                       })
                     }
                   />
                   <input
                     className="doc-header-projnum"
                     value={data.projectNum}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       dispatch({
                         type: "setField",
                         field: "projectNum",
-                        value: e.target.value,
+                        value: event.target.value,
                       })
                     }
                   />
@@ -1265,22 +1213,22 @@ export default function PunchListApp() {
                   <input
                     className="doc-header-title"
                     value={data.title}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       dispatch({
                         type: "setField",
                         field: "title",
-                        value: e.target.value,
+                        value: event.target.value,
                       })
                     }
                   />
                   <input
                     className="doc-header-date"
                     value={data.date}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       dispatch({
                         type: "setField",
                         field: "date",
-                        value: e.target.value,
+                        value: event.target.value,
                       })
                     }
                   />
@@ -1289,11 +1237,11 @@ export default function PunchListApp() {
                   <input
                     className="doc-header-firm"
                     value={data.firm ?? ""}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       dispatch({
                         type: "setField",
                         field: "firm",
-                        value: e.target.value,
+                        value: event.target.value,
                       })
                     }
                   />
@@ -1304,47 +1252,46 @@ export default function PunchListApp() {
               </div>
               <hr className="doc-header-rule" />
 
-              {/* Site conditions — page 1 only */}
-              {headerSegs.some((s) => s.type === "siteConditions") && (
+              {headerSegs.some((seg) => seg.type === "siteConditions") && (
                 <div>
                   <div className="section-label-row">
                     <div className="section-label">Site Conditions</div>
                     <input
                       className="site-input site-date-input"
                       value={data.punchlistDate ?? ""}
-                      onChange={(e) =>
+                      onChange={(event) =>
                         dispatch({
                           type: "setField",
                           field: "punchlistDate",
-                          value: e.target.value,
+                          value: event.target.value,
                         })
                       }
-                      placeholder="Punchlist date and time…"
+                      placeholder="Punchlist date and time..."
                     />
                   </div>
                   <ul className="site-list">
-                    {data.siteConditions.map((s, i) => (
-                      <li key={i} className="site-item">
-                        <span className="site-bullet">–</span>
+                    {data.siteConditions.map((condition, index) => (
+                      <li key={index} className="site-item">
+                        <span className="site-bullet">-</span>
                         <input
                           className="site-input"
-                          value={s}
-                          onChange={(e) =>
+                          value={condition}
+                          onChange={(event) =>
                             dispatch({
                               type: "setSiteCondition",
-                              index: i,
-                              value: e.target.value,
+                              index,
+                              value: event.target.value,
                             })
                           }
-                          placeholder="Add condition…"
+                          placeholder="Add condition..."
                         />
                         <button
                           className="site-remove"
                           onClick={() =>
-                            dispatch({ type: "removeSiteCondition", index: i })
+                            dispatch({ type: "removeSiteCondition", index })
                           }
                         >
-                          ✕
+                          x
                         </button>
                       </li>
                     ))}
@@ -1353,22 +1300,38 @@ export default function PunchListApp() {
                     className="add-inline"
                     onClick={() => dispatch({ type: "addSiteCondition" })}
                   >
-                    ＋ Add condition
+                    + Add condition
                   </button>
                 </div>
               )}
 
-              {/* Content area — item-rows are direct flex children for equal height */}
               <div className="page-content">
-                {contentSegs.flatMap((seg, segIdx) =>
-                  renderSeg(seg, segIdx, contentSegs),
-                )}
+                <div
+                  className="page-content-body"
+                  style={{
+                    "--grid-cols": String(layoutMetrics.columns),
+                    "--content-rows": String(
+                      pageIdx === 0
+                        ? layoutMetrics.firstPageRows
+                        : layoutMetrics.otherPageRows,
+                    ),
+                  }}
+                >
+                  {contentSegs.map((seg, segIdx) =>
+                    seg.type === "rowGroup"
+                      ? renderRowGroup(seg, `page-${pageIdx}-row-${segIdx}`)
+                      : renderEmptySection(
+                          seg,
+                          `page-${pageIdx}-empty-${segIdx}`,
+                        ),
+                  )}
+                </div>
                 {pageIdx === pages.length - 1 && (
                   <button
                     className="add-room-btn"
                     onClick={() => dispatch({ type: "addRoom" })}
                   >
-                    ＋ Add room
+                    + Add room
                   </button>
                 )}
               </div>

@@ -1,16 +1,19 @@
 import { useState } from "react";
+import { DENSITY_OPTIONS } from "./layout.js";
 
 export default function ProjectSidebar({
   isOpen,
   onToggle,
-  projects,       // [{ id, name, projectNum, lastSaved }]
+  projects,
   activeId,
-  onOpen,         // (id) => void
-  onNew,          // () => void
-  onDuplicate,    // () => void
-  onDelete,       // (id) => void
+  onOpen,
+  onNew,
+  onDuplicate,
+  onDelete,
+  layout,
+  onLayoutChange,
 }) {
-  const [deleteConfirm, setDeleteConfirm] = useState(null); // id pending delete
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const deleteTimers = {};
 
   const handleDeleteClick = (id) => {
@@ -26,7 +29,6 @@ export default function ProjectSidebar({
 
   return (
     <>
-      {/* Toggle tab — always visible on left edge */}
       <button
         className={`sidebar-toggle${isOpen ? " sidebar-toggle--open" : ""}`}
         onClick={onToggle}
@@ -38,7 +40,6 @@ export default function ProjectSidebar({
         </svg>
       </button>
 
-      {/* Sidebar panel */}
       <div className={`sidebar${isOpen ? " sidebar--open" : ""}`} aria-hidden={!isOpen}>
         <div className="sidebar-header">
           <span className="sidebar-label">Projects</span>
@@ -73,12 +74,38 @@ export default function ProjectSidebar({
                     title={deleteConfirm === proj.id ? "Click again to confirm" : "Delete project"}
                     aria-label="Delete project"
                   >
-                    {deleteConfirm === proj.id ? "?" : "✕"}
+                    {deleteConfirm === proj.id ? "?" : "x"}
                   </button>
                 )}
               </div>
             );
           })}
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-label">Layout</div>
+          <div className="sidebar-density">
+            {DENSITY_OPTIONS.map((density) => (
+              <button
+                key={density}
+                className={`sidebar-density-btn${layout.density === density ? " sidebar-density-btn--active" : ""}`}
+                onClick={() => onLayoutChange({ density })}
+                type="button"
+              >
+                {density}
+              </button>
+            ))}
+          </div>
+          <label className="sidebar-toggle-row">
+            <input
+              type="checkbox"
+              checked={layout.showPhotos}
+              onChange={(event) =>
+                onLayoutChange({ showPhotos: event.target.checked })
+              }
+            />
+            <span>Show photos</span>
+          </label>
         </div>
 
         <div className="sidebar-actions">
@@ -98,7 +125,6 @@ export default function ProjectSidebar({
         </div>
       </div>
 
-      {/* Overlay to close sidebar on mobile / click-outside */}
       {isOpen && (
         <div className="sidebar-overlay" onClick={onToggle} aria-hidden="true" />
       )}
