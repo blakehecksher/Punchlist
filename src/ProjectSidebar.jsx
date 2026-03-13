@@ -107,6 +107,16 @@ export default function ProjectSidebar({
             />
             <span>Show photos</span>
           </label>
+          <label className="sidebar-toggle-row">
+            <input
+              type="checkbox"
+              checked={layout.showSummary}
+              onChange={(event) =>
+                onLayoutChange({ showSummary: event.target.checked })
+              }
+            />
+            <span>Summary</span>
+          </label>
         </div>
 
         <div className="sidebar-section">

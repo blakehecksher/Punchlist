@@ -3,6 +3,7 @@ export const DENSITY_OPTIONS = ["2x2", "3x3", "4x4"];
 export const DEFAULT_LAYOUT = {
   density: "2x2",
   showPhotos: true,
+  showSummary: true,
 };
 
 const COLUMN_MAP = {
@@ -34,6 +35,10 @@ export function normalizeLayout(layout) {
       typeof layout?.showPhotos === "boolean"
         ? layout.showPhotos
         : DEFAULT_LAYOUT.showPhotos,
+    showSummary:
+      typeof layout?.showSummary === "boolean"
+        ? layout.showSummary
+        : DEFAULT_LAYOUT.showSummary,
   };
 }
 

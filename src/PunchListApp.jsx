@@ -64,6 +64,11 @@ const getCurrentDateLabel = (date = new Date()) =>
     day: "numeric",
     year: "numeric",
   }).format(date);
+const autosizeTextarea = (element) => {
+  if (!element) return;
+  element.style.height = "0px";
+  element.style.height = `${element.scrollHeight}px`;
+};
 
 const IMPORT_CLEANUP_PROMPT = `I will paste raw punch list notes below. Rewrite them so they can be imported into a punch list tool.
 
@@ -935,7 +940,7 @@ export default function PunchListApp() {
       })),
     ),
   ];
-  const summaryPages = paginateSummary(summaryEntries);
+  const summaryPages = layout.showSummary ? paginateSummary(summaryEntries) : [];
   const detailPages = paginateDetail(data, layout, {
     includeSiteConditions: summaryPages.length === 0,
   });
@@ -1085,17 +1090,20 @@ export default function PunchListApp() {
     <div className="summary-cell summary-cell--description">
       <textarea
         className="summary-desc-edit"
+        ref={autosizeTextarea}
         value={entry.description}
-        onChange={(event) =>
+        onInput={(event) => autosizeTextarea(event.currentTarget)}
+        onChange={(event) => {
+          autosizeTextarea(event.currentTarget);
           dispatch({
             type: "updateItem",
             id: entry.id,
             field: "description",
             value: event.target.value,
-          })
-        }
+          });
+        }}
         placeholder="Click here to enter description"
-        rows={entry.lineSpan ?? 1}
+        rows={1}
       />
     </div>
   );
@@ -1345,8 +1353,6 @@ export default function PunchListApp() {
     const summarySeg = segments.find((seg) => seg.type === "summary");
     if (!summarySeg) return null;
 
-    const emptyRows = Math.max(summarySeg.rows - (summarySeg.usedRows ?? 0), 0);
-
     return (
       <div key={`summary-${pageIdx}`} className="page page--summary">
         {renderDocumentHeader(pageIdx + 1, totalPages)}
@@ -1370,16 +1376,9 @@ export default function PunchListApp() {
             </div>
           </div>
 
-          <div
-            className="summary-list"
-            style={{ "--summary-rows": String(summarySeg.rows) }}
-          >
+          <div className="summary-list">
             {summarySeg.entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="summary-row"
-                style={{ gridRow: `span ${entry.lineSpan ?? 1}` }}
-              >
+              <div key={entry.id} className="summary-row">
                 <div
                   className="summary-cell summary-cell--location"
                   title={entry.location}
@@ -1391,12 +1390,6 @@ export default function PunchListApp() {
                 </div>
                 {renderSummaryDescriptionCell(entry)}
               </div>
-            ))}
-            {Array.from({ length: emptyRows }, (_, index) => (
-              <div
-                key={`summary-empty-${pageIdx}-${index}`}
-                className="summary-row summary-row--empty"
-              />
             ))}
           </div>
         </div>
