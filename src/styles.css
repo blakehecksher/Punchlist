@@ -307,6 +307,121 @@ body {
   flex-direction: column;
   min-height: 0;
 }
+.summary-page-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.summary-header-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  margin-bottom: 8px;
+}
+.summary-count {
+  font-size: 11px;
+  color: #6f6258;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.summary-table-head,
+.summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) 92px minmax(0, 5.3fr);
+}
+.summary-table-head {
+  align-items: center;
+}
+.summary-table-head {
+  border-top: 1px solid #d8ccc4;
+  border-left: 1px solid #d8ccc4;
+  border-right: 1px solid #d8ccc4;
+  background: #f7f1ec;
+}
+.summary-col {
+  padding: 6px 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #923b08;
+}
+.summary-col + .summary-col {
+  border-left: 1px solid #e1d5cd;
+}
+.summary-list {
+  flex: 1;
+  display: grid;
+  grid-template-rows: repeat(var(--summary-rows), minmax(0, 1fr));
+  border: 1px solid #d8ccc4;
+  border-top: none;
+  min-height: 0;
+  align-content: start;
+}
+.summary-row {
+  min-height: 0;
+  align-items: stretch;
+}
+.summary-row + .summary-row {
+  border-top: 1px solid #ece2dc;
+}
+.summary-row--empty {
+  display: block;
+  border-top: 1px solid #ece2dc;
+}
+.summary-cell {
+  min-width: 0;
+  padding: 3px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.18;
+}
+.summary-cell + .summary-cell {
+  border-left: 1px solid #ece2dc;
+}
+.summary-cell--location,
+.summary-cell--description {
+  font-family: "EB Garamond", serif;
+  font-size: 11px;
+  color: #1a1a1a;
+}
+.summary-cell--description {
+  white-space: normal;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  padding: 0;
+}
+.summary-desc-edit {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 3px 6px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  font-family: "EB Garamond", serif;
+  font-size: 11px;
+  color: #1a1a1a;
+  line-height: 1.18;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+}
+.summary-desc-edit:focus {
+  background: #fafaf8;
+}
+.summary-cell--id {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #923b08;
+}
 
 /* ── Document header ── */
 .doc-header {

@@ -2,6 +2,7 @@ const BULLET_RE = /^(\s*)(?:[-*+]|(?:\d+)[.)])\s+(.+?)\s*$/;
 const COLON_HEADING_RE = /^[A-Za-z0-9].*:\s*$/;
 const GENERAL_NOTES_KEYS = new Set(["general notes", "general note", "general"]);
 const SITE_CONDITION_KEYS = new Set(["site conditions", "site condition"]);
+const ISSUE_CODE_PREFIX_RE = /^(?:[A-Z]{2,4}|\d{2,4})-\d{2,}\s*:\s*/i;
 
 function normalizeIndent(line) {
   return line.replace(/\t/g, "    ");
@@ -43,7 +44,9 @@ function finalizeSections(sections) {
   const rooms = [];
 
   sections.forEach((section) => {
-    const cleanedItems = section.items.map((item) => item.trim()).filter(Boolean);
+    const cleanedItems = section.items
+      .map((item) => item.replace(ISSUE_CODE_PREFIX_RE, "").trim())
+      .filter(Boolean);
     if (cleanedItems.length === 0) return;
     if (section.type === "siteConditions") {
       siteConditions.push(...cleanedItems);

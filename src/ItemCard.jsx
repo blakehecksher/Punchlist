@@ -9,7 +9,7 @@ const ROWS_BY_DENSITY = {
 export default function ItemCard({
   projectId,
   item,
-  num,
+  issueCode,
   density,
   showPhotos,
   onDescChange,
@@ -28,7 +28,7 @@ export default function ItemCard({
   return (
     <div className={cardClass}>
       <div className="item-text">
-        <div className="item-num">Item #{String(num).padStart(2, "0")}</div>
+        <div className="item-num">{issueCode}</div>
         <div className="item-label">Description:</div>
         <textarea
           className="item-desc-edit"

@@ -6,8 +6,19 @@ import {
 } from "./importHtml.js";
 import { readImportFile } from "./importFile.js";
 import { parseImportText } from "./importParser.js";
+import { copyNotesToClipboard } from "./exportNotes.js";
+import {
+  formatIssueCode,
+  getNextIssueSeq,
+  getRoomIssuePrefix,
+  normalizeItemIssueSeqs,
+} from "./issueIds.js";
 import { DEFAULT_LAYOUT, getLayoutMetrics, normalizeLayout } from "./layout.js";
-import { GENERAL_NOTES_SECTION_ID, paginate } from "./pagination.js";
+import {
+  GENERAL_NOTES_SECTION_ID,
+  paginateDetail,
+  paginateSummary,
+} from "./pagination.js";
 import ItemCard from "./ItemCard.jsx";
 import ProjectSidebar from "./ProjectSidebar.jsx";
 import {
@@ -25,9 +36,23 @@ import "./styles.css";
 const uid = () => Math.random().toString(36).slice(2, 9);
 const normalizeRoomKey = (name) =>
   name.trim().replace(/\s+/g, " ").toLowerCase();
-const makeItem = (description = "") => ({
+const getRoomSortNumber = (roomName) => {
+  const prefix = getRoomIssuePrefix(roomName);
+  const numeric = Number.parseInt(prefix, 10);
+  return Number.isFinite(numeric) ? numeric : Number.POSITIVE_INFINITY;
+};
+const compareRoomNames = (left, right) => {
+  const roomNumberDiff = getRoomSortNumber(left.name) - getRoomSortNumber(right.name);
+  if (roomNumberDiff !== 0) return roomNumberDiff;
+  return left.name.trim().localeCompare(right.name.trim(), undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+};
+const makeItem = (description = "", issueSeq = 1) => ({
   id: uid(),
   description,
+  issueSeq,
   photo: null,
   photoPosition: null,
 });
@@ -117,14 +142,25 @@ function makeBlankProjectData() {
     punchlistDate: "",
     generalNotesTitle: "General",
     layout: { ...DEFAULT_LAYOUT },
+    nextGeneralIssueSeq: 1,
     siteConditions: [],
     generalNotes: [],
     rooms: [],
   };
 }
 
+function makeRoom(name = "Room Name", firstDescription = "") {
+  return {
+    id: uid(),
+    name,
+    nextItemIssueSeq: 2,
+    items: [makeItem(firstDescription, 1)],
+  };
+}
+
 const INITIAL_DATA = {
   ...makeBlankProjectData(),
+  nextGeneralIssueSeq: 5,
   siteConditions: [
     "Example condition: final painting touch-ups are in progress",
     "Example condition: flooring protection remains in place in main hall",
@@ -134,6 +170,7 @@ const INITIAL_DATA = {
   generalNotes: [
     {
       id: "gn1",
+      issueSeq: 1,
       description:
         "Example note 01: verify final paint touch-up at all visible corners.",
       photo: null,
@@ -141,6 +178,7 @@ const INITIAL_DATA = {
     },
     {
       id: "gn2",
+      issueSeq: 2,
       description:
         "Example note 02: confirm hardware finish is consistent throughout.",
       photo: null,
@@ -148,6 +186,7 @@ const INITIAL_DATA = {
     },
     {
       id: "gn3",
+      issueSeq: 3,
       description:
         "Example note 03: clean glass, mirrors, and adjacent trim before turnover.",
       photo: null,
@@ -155,6 +194,7 @@ const INITIAL_DATA = {
     },
     {
       id: "gn4",
+      issueSeq: 4,
       description:
         "Example note 04: review all control locations for alignment and labeling.",
       photo: null,
@@ -165,15 +205,18 @@ const INITIAL_DATA = {
     {
       id: "r101",
       name: "101  Entry Hall",
+      nextItemIssueSeq: 3,
       items: [
         {
           id: "r101_1",
+          issueSeq: 1,
           description: "Example item: touch up paint at door frame corners.",
           photo: null,
           photoPosition: null,
         },
         {
           id: "r101_2",
+          issueSeq: 2,
           description:
             "Example item: align cover plates vertically with adjacent trim.",
           photo: null,
@@ -184,9 +227,11 @@ const INITIAL_DATA = {
     {
       id: "r102",
       name: "102  Kitchen",
+      nextItemIssueSeq: 4,
       items: [
         {
           id: "r102_1",
+          issueSeq: 1,
           description:
             "Example item: adjust cabinet reveal for consistent gap.",
           photo: null,
@@ -194,6 +239,7 @@ const INITIAL_DATA = {
         },
         {
           id: "r102_2",
+          issueSeq: 2,
           description:
             "Example item: clean stone backsplash and sealant joints.",
           photo: null,
@@ -201,6 +247,7 @@ const INITIAL_DATA = {
         },
         {
           id: "r102_3",
+          issueSeq: 3,
           description:
             "Example item: verify appliance panel alignment after final install.",
           photo: null,
@@ -211,9 +258,11 @@ const INITIAL_DATA = {
     {
       id: "r103",
       name: "103  Pantry",
+      nextItemIssueSeq: 2,
       items: [
         {
           id: "r103_1",
+          issueSeq: 1,
           description:
             "Example item: patch and paint shelf support touch-up locations.",
           photo: null,
@@ -224,9 +273,11 @@ const INITIAL_DATA = {
     {
       id: "r104",
       name: "104  Living Room",
+      nextItemIssueSeq: 3,
       items: [
         {
           id: "r104_1",
+          issueSeq: 1,
           description:
             "Example item: repair minor wall blemish at window return.",
           photo: null,
@@ -234,6 +285,7 @@ const INITIAL_DATA = {
         },
         {
           id: "r104_2",
+          issueSeq: 2,
           description:
             "Example item: confirm grille finish matches adjacent ceiling paint.",
           photo: null,
@@ -244,9 +296,11 @@ const INITIAL_DATA = {
     {
       id: "r105",
       name: "105  Bedroom",
+      nextItemIssueSeq: 2,
       items: [
         {
           id: "r105_1",
+          issueSeq: 1,
           description: "Example item: adjust closet doors for even spacing.",
           photo: null,
           photoPosition: null,
@@ -256,15 +310,18 @@ const INITIAL_DATA = {
     {
       id: "r106",
       name: "106  Bath",
+      nextItemIssueSeq: 3,
       items: [
         {
           id: "r106_1",
+          issueSeq: 1,
           description: "Example item: verify fixture trim is installed level.",
           photo: null,
           photoPosition: null,
         },
         {
           id: "r106_2",
+          issueSeq: 2,
           description: "Example item: clean mirror edges and adjacent sealant.",
           photo: null,
           photoPosition: null,
@@ -288,7 +345,32 @@ function normalizeStoredData(stored, photos = {}) {
       };
     });
 
-  return {
+  const withIssueSequences = (data) => {
+    const general = normalizeItemIssueSeqs(data.generalNotes || []);
+    const rooms = (data.rooms || []).map((room) => {
+      const normalized = normalizeItemIssueSeqs(room.items || []);
+      return {
+        ...room,
+        nextItemIssueSeq: getNextIssueSeq(
+          normalized.items,
+          room.nextItemIssueSeq ?? normalized.nextIssueSeq,
+        ),
+        items: normalized.items,
+      };
+    });
+
+    return {
+      ...data,
+      nextGeneralIssueSeq: getNextIssueSeq(
+        general.items,
+        data.nextGeneralIssueSeq ?? general.nextIssueSeq,
+      ),
+      generalNotes: general.items,
+      rooms,
+    };
+  };
+
+  return withIssueSequences({
     ...makeBlankProjectData(),
     ...stored,
     layout: normalizeLayout(stored?.layout),
@@ -301,7 +383,7 @@ function normalizeStoredData(stored, photos = {}) {
       ...room,
       items: mergePhotos(room.items || []),
     })),
-  };
+  });
 }
 
 const stripPhotos = (data) => ({
@@ -396,7 +478,17 @@ function reducer(state, action) {
       }));
 
     case "addGeneralNote":
-      return { ...state, generalNotes: [...state.generalNotes, makeItem()] };
+      {
+        const nextIssueSeq = getNextIssueSeq(
+          state.generalNotes,
+          state.nextGeneralIssueSeq,
+        );
+        return {
+          ...state,
+          nextGeneralIssueSeq: nextIssueSeq + 1,
+          generalNotes: [...state.generalNotes, makeItem("", nextIssueSeq)],
+        };
+      }
 
     case "removeGeneralNote":
       return {
@@ -416,34 +508,56 @@ function reducer(state, action) {
         ...state.siteConditions,
         ...action.payload.siteConditions,
       ];
-      const nextGeneralNotes = [
-        ...state.generalNotes,
-        ...action.payload.generalNotes.map((description) =>
-          makeItem(description),
-        ),
-      ];
+      const nextGeneralNotes = [...state.generalNotes];
+      let nextGeneralIssueSeq = getNextIssueSeq(
+        nextGeneralNotes,
+        state.nextGeneralIssueSeq,
+      );
+      action.payload.generalNotes.forEach((description) => {
+        nextGeneralNotes.push(makeItem(description, nextGeneralIssueSeq));
+        nextGeneralIssueSeq += 1;
+      });
 
       action.payload.rooms.forEach((room) => {
         const key = normalizeRoomKey(room.name);
-        const importedItems = room.items.map((description) =>
-          makeItem(description),
-        );
         const existingIndex = roomIndexByKey.get(key);
 
         if (existingIndex !== undefined) {
+          let nextRoomIssueSeq = getNextIssueSeq(
+            rooms[existingIndex].items,
+            rooms[existingIndex].nextItemIssueSeq,
+          );
+          const importedItems = room.items.map((description) => {
+            const item = makeItem(description, nextRoomIssueSeq);
+            nextRoomIssueSeq += 1;
+            return item;
+          });
           rooms[existingIndex] = {
             ...rooms[existingIndex],
+            nextItemIssueSeq: nextRoomIssueSeq,
             items: [...rooms[existingIndex].items, ...importedItems],
           };
           return;
         }
 
+        let nextRoomIssueSeq = 1;
+        const importedItems = room.items.map((description) => {
+          const item = makeItem(description, nextRoomIssueSeq);
+          nextRoomIssueSeq += 1;
+          return item;
+        });
         roomIndexByKey.set(key, rooms.length);
-        rooms.push({ id: uid(), name: room.name, items: importedItems });
+        rooms.push({
+          id: uid(),
+          name: room.name,
+          nextItemIssueSeq: nextRoomIssueSeq,
+          items: importedItems,
+        });
       });
 
       return {
         ...state,
+        nextGeneralIssueSeq,
         siteConditions: nextSiteConditions,
         generalNotes: nextGeneralNotes,
         rooms,
@@ -456,7 +570,17 @@ function reducer(state, action) {
         rooms: state.rooms.map((room) =>
           room.id !== action.roomId
             ? room
-            : { ...room, items: [...room.items, makeItem()] },
+            : (() => {
+                const nextIssueSeq = getNextIssueSeq(
+                  room.items,
+                  room.nextItemIssueSeq,
+                );
+                return {
+                  ...room,
+                  nextItemIssueSeq: nextIssueSeq + 1,
+                  items: [...room.items, makeItem("", nextIssueSeq)],
+                };
+              })(),
         ),
       };
 
@@ -486,16 +610,19 @@ function reducer(state, action) {
     case "addRoom":
       return {
         ...state,
-        rooms: [
-          ...state.rooms,
-          { id: uid(), name: "Room Name", items: [makeItem()] },
-        ],
+        rooms: [...state.rooms, makeRoom()],
       };
 
     case "removeRoom":
       return {
         ...state,
         rooms: state.rooms.filter((room) => room.id !== action.roomId),
+      };
+
+    case "sortRooms":
+      return {
+        ...state,
+        rooms: [...state.rooms].sort(compareRoomNames),
       };
 
     case "clearAll":
@@ -773,25 +900,57 @@ export default function PunchListApp() {
     }
   }, []);
 
+  const handleSortRooms = useCallback(() => {
+    dispatch({ type: "sortRooms" });
+    setSaveStatus("Rooms sorted");
+    setTimeout(() => setSaveStatus(""), 1500);
+  }, []);
+
+  const handleCopyNotes = useCallback(async () => {
+    try {
+      await copyNotesToClipboard(data);
+      setSaveStatus("Notes copied");
+      setTimeout(() => setSaveStatus(""), 1500);
+    } catch {
+      setSaveStatus("Copy failed");
+      setTimeout(() => setSaveStatus(""), 1500);
+    }
+  }, [data]);
+
   const layout = normalizeLayout(data.layout);
   const layoutMetrics = getLayoutMetrics(layout);
-  const pages = paginate(data, layout);
-
-  const gnItemNums = {};
-  data.generalNotes.forEach((item, index) => {
-    gnItemNums[item.id] = index + 1;
+  const summaryEntries = [
+    ...data.generalNotes.map((item) => ({
+      id: item.id,
+      location: data.generalNotesTitle || "General",
+      issueCode: formatIssueCode("generalNotes", data.generalNotesTitle, item.issueSeq),
+      description: item.description,
+    })),
+    ...data.rooms.flatMap((room) =>
+      room.items.map((item) => ({
+        id: item.id,
+        location: room.name,
+        issueCode: formatIssueCode("room", room.name, item.issueSeq),
+        description: item.description,
+      })),
+    ),
+  ];
+  const summaryPages = paginateSummary(summaryEntries);
+  const detailPages = paginateDetail(data, layout, {
+    includeSiteConditions: summaryPages.length === 0,
   });
-
-  const roomItemNums = {};
-  data.rooms.forEach((room) => {
-    room.items.forEach((item, index) => {
-      roomItemNums[item.id] = index + 1;
-    });
-  });
+  const pages = [
+    ...summaryPages.map((segments) => ({ kind: "summary", segments })),
+    ...detailPages.map((segments) => ({ kind: "detail", segments })),
+  ];
+  const lastDetailPageIndex = pages.reduce(
+    (lastIndex, page, index) => (page.kind === "detail" ? index : lastIndex),
+    -1,
+  );
 
   const firstSectionChunk = {};
   const lastSectionChunk = {};
-  pages.flatMap((page) => page).forEach((seg) => {
+  pages.flatMap((page) => page.segments).forEach((seg) => {
     const chunks =
       seg.type === "rowGroup"
         ? seg.sections
@@ -806,10 +965,8 @@ export default function PunchListApp() {
     });
   });
 
-  const getSectionItemNumber = (section, item) =>
-    section.sectionId === GENERAL_NOTES_SECTION_ID
-      ? gnItemNums[item.id]
-      : roomItemNums[item.id];
+  const getSectionIssueCode = (section, item) =>
+    formatIssueCode(section.kind, section.title, item.issueSeq);
 
   const renderHeaderCell = (section, key) => {
     const headerClass = [
@@ -890,7 +1047,7 @@ export default function PunchListApp() {
       key={item.id}
       projectId={activeIdRef.current}
       item={item}
-      num={getSectionItemNumber(section, item)}
+      issueCode={getSectionIssueCode(section, item)}
       density={layout.density}
       showPhotos={layout.showPhotos}
       onDescChange={(value) =>
@@ -922,6 +1079,25 @@ export default function PunchListApp() {
       }
       onPositionChange={(position) => handlePositionChange(item.id, position)}
     />
+  );
+
+  const renderSummaryDescriptionCell = (entry) => (
+    <div className="summary-cell summary-cell--description">
+      <textarea
+        className="summary-desc-edit"
+        value={entry.description}
+        onChange={(event) =>
+          dispatch({
+            type: "updateItem",
+            id: entry.id,
+            field: "description",
+            value: event.target.value,
+          })
+        }
+        placeholder="Click here to enter description"
+        rows={entry.lineSpan ?? 1}
+      />
+    </div>
   );
 
   const renderActionCell = (section, key) => {
@@ -1039,6 +1215,241 @@ export default function PunchListApp() {
     layout.showPhotos ? "page--with-photos" : "page--text-only",
   ].join(" ");
 
+  const renderDocumentHeader = (pageNumber, totalPages) => (
+    <>
+      <div className="doc-header">
+        <div className="doc-header-left">
+          <input
+            className="doc-header-project"
+            value={data.project}
+            onChange={(event) =>
+              dispatch({
+                type: "setField",
+                field: "project",
+                value: event.target.value,
+              })
+            }
+          />
+          <input
+            className="doc-header-projnum"
+            value={data.projectNum}
+            onChange={(event) =>
+              dispatch({
+                type: "setField",
+                field: "projectNum",
+                value: event.target.value,
+              })
+            }
+          />
+        </div>
+        <div className="doc-header-center">
+          <input
+            className="doc-header-title"
+            value={data.title}
+            onChange={(event) =>
+              dispatch({
+                type: "setField",
+                field: "title",
+                value: event.target.value,
+              })
+            }
+          />
+          <input
+            className="doc-header-date"
+            value={data.date}
+            onChange={(event) =>
+              dispatch({
+                type: "setField",
+                field: "date",
+                value: event.target.value,
+              })
+            }
+          />
+        </div>
+        <div className="doc-header-right">
+          <input
+            className="doc-header-firm"
+            value={data.firm ?? ""}
+            onChange={(event) =>
+              dispatch({
+                type: "setField",
+                field: "firm",
+                value: event.target.value,
+              })
+            }
+          />
+          <div className="doc-header-page">
+            page {pageNumber} of {totalPages}
+          </div>
+        </div>
+      </div>
+      <hr className="doc-header-rule" />
+    </>
+  );
+
+  const renderSiteConditions = () => (
+    <div>
+      <div className="section-label-row">
+        <div className="section-label">Site Conditions</div>
+        <input
+          className="site-input site-date-input"
+          value={data.punchlistDate ?? ""}
+          onChange={(event) =>
+            dispatch({
+              type: "setField",
+              field: "punchlistDate",
+              value: event.target.value,
+            })
+          }
+          placeholder="Punchlist date and time..."
+        />
+      </div>
+      <ul className="site-list">
+        {data.siteConditions.map((condition, index) => (
+          <li key={index} className="site-item">
+            <span className="site-bullet">-</span>
+            <input
+              className="site-input"
+              value={condition}
+              onChange={(event) =>
+                dispatch({
+                  type: "setSiteCondition",
+                  index,
+                  value: event.target.value,
+                })
+              }
+              placeholder="Add condition..."
+            />
+            <button
+              className="site-remove"
+              onClick={() => dispatch({ type: "removeSiteCondition", index })}
+            >
+              x
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        className="add-inline"
+        onClick={() => dispatch({ type: "addSiteCondition" })}
+      >
+        + Add condition
+      </button>
+    </div>
+  );
+
+  const renderSummaryPage = (segments, pageIdx, totalPages) => {
+    const headerSegs = segments.filter(
+      (seg) => seg.type === "header" || seg.type === "siteConditions",
+    );
+    const summarySeg = segments.find((seg) => seg.type === "summary");
+    if (!summarySeg) return null;
+
+    const emptyRows = Math.max(summarySeg.rows - (summarySeg.usedRows ?? 0), 0);
+
+    return (
+      <div key={`summary-${pageIdx}`} className="page page--summary">
+        {renderDocumentHeader(pageIdx + 1, totalPages)}
+        {headerSegs.some((seg) => seg.type === "siteConditions") &&
+          renderSiteConditions()}
+
+        <div className="summary-page-body">
+          <div className="summary-header-row">
+            <div className="section-label">Summary</div>
+            <div className="summary-count">
+              {summaryEntries.length} item
+              {summaryEntries.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          <div className="summary-table-head">
+            <div className="summary-col summary-col--location">Location</div>
+            <div className="summary-col summary-col--id">Item</div>
+            <div className="summary-col summary-col--description">
+              Description
+            </div>
+          </div>
+
+          <div
+            className="summary-list"
+            style={{ "--summary-rows": String(summarySeg.rows) }}
+          >
+            {summarySeg.entries.map((entry) => (
+              <div
+                key={entry.id}
+                className="summary-row"
+                style={{ gridRow: `span ${entry.lineSpan ?? 1}` }}
+              >
+                <div
+                  className="summary-cell summary-cell--location"
+                  title={entry.location}
+                >
+                  {entry.location}
+                </div>
+                <div className="summary-cell summary-cell--id">
+                  {entry.issueCode}
+                </div>
+                {renderSummaryDescriptionCell(entry)}
+              </div>
+            ))}
+            {Array.from({ length: emptyRows }, (_, index) => (
+              <div
+                key={`summary-empty-${pageIdx}-${index}`}
+                className="summary-row summary-row--empty"
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderDetailPage = (segments, pageIdx, totalPages, isLastDetailPage) => {
+    const headerSegs = segments.filter(
+      (seg) => seg.type === "header" || seg.type === "siteConditions",
+    );
+    const contentSegs = segments.filter(
+      (seg) => seg.type !== "header" && seg.type !== "siteConditions",
+    );
+
+    return (
+      <div key={`detail-${pageIdx}`} className={pageClassName}>
+        {renderDocumentHeader(pageIdx + 1, totalPages)}
+
+        {headerSegs.some((seg) => seg.type === "siteConditions") &&
+          renderSiteConditions()}
+
+        <div className="page-content">
+          <div
+            className="page-content-body"
+            style={{
+              "--grid-cols": String(layoutMetrics.columns),
+              "--content-rows": String(
+                headerSegs.some((seg) => seg.type === "siteConditions")
+                  ? layoutMetrics.firstPageRows
+                  : layoutMetrics.otherPageRows,
+              ),
+            }}
+          >
+            {contentSegs.map((seg, segIdx) =>
+              seg.type === "rowGroup"
+                ? renderRowGroup(seg, `page-${pageIdx}-row-${segIdx}`)
+                : renderEmptySection(seg, `page-${pageIdx}-empty-${segIdx}`),
+            )}
+          </div>
+          {isLastDetailPage && (
+            <button
+              className="add-room-btn"
+              onClick={() => dispatch({ type: "addRoom" })}
+            >
+              + Add room
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={`app${sidebarOpen ? " app--sidebar-open" : ""}`}>
       <ProjectSidebar
@@ -1054,6 +1465,7 @@ export default function PunchListApp() {
         onLayoutChange={(layoutUpdate) =>
           dispatch({ type: "setLayout", layout: layoutUpdate })
         }
+        onSortRooms={handleSortRooms}
       />
 
       <div className="toolbar">
@@ -1090,6 +1502,9 @@ export default function PunchListApp() {
             onClick={() => setImportOpen((open) => !open)}
           >
             {importOpen ? "Close Import" : "Import Notes"}
+          </button>
+          <button className="btn btn-secondary" onClick={handleCopyNotes}>
+            Copy Notes
           </button>
           <button className="btn btn-print" onClick={() => window.print()}>
             <DocumentIcon />
@@ -1174,170 +1589,16 @@ export default function PunchListApp() {
       )}
 
       <div className="pages">
-        {pages.map((pageSegs, pageIdx) => {
-          const headerSegs = pageSegs.filter(
-            (seg) => seg.type === "header" || seg.type === "siteConditions",
-          );
-          const contentSegs = pageSegs.filter(
-            (seg) => seg.type !== "header" && seg.type !== "siteConditions",
-          );
-
-          return (
-            <div key={pageIdx} className={pageClassName}>
-              <div className="doc-header">
-                <div className="doc-header-left">
-                  <input
-                    className="doc-header-project"
-                    value={data.project}
-                    onChange={(event) =>
-                      dispatch({
-                        type: "setField",
-                        field: "project",
-                        value: event.target.value,
-                      })
-                    }
-                  />
-                  <input
-                    className="doc-header-projnum"
-                    value={data.projectNum}
-                    onChange={(event) =>
-                      dispatch({
-                        type: "setField",
-                        field: "projectNum",
-                        value: event.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div className="doc-header-center">
-                  <input
-                    className="doc-header-title"
-                    value={data.title}
-                    onChange={(event) =>
-                      dispatch({
-                        type: "setField",
-                        field: "title",
-                        value: event.target.value,
-                      })
-                    }
-                  />
-                  <input
-                    className="doc-header-date"
-                    value={data.date}
-                    onChange={(event) =>
-                      dispatch({
-                        type: "setField",
-                        field: "date",
-                        value: event.target.value,
-                      })
-                    }
-                  />
-                </div>
-                <div className="doc-header-right">
-                  <input
-                    className="doc-header-firm"
-                    value={data.firm ?? ""}
-                    onChange={(event) =>
-                      dispatch({
-                        type: "setField",
-                        field: "firm",
-                        value: event.target.value,
-                      })
-                    }
-                  />
-                  <div className="doc-header-page">
-                    page {pageIdx + 1} of {pages.length}
-                  </div>
-                </div>
-              </div>
-              <hr className="doc-header-rule" />
-
-              {headerSegs.some((seg) => seg.type === "siteConditions") && (
-                <div>
-                  <div className="section-label-row">
-                    <div className="section-label">Site Conditions</div>
-                    <input
-                      className="site-input site-date-input"
-                      value={data.punchlistDate ?? ""}
-                      onChange={(event) =>
-                        dispatch({
-                          type: "setField",
-                          field: "punchlistDate",
-                          value: event.target.value,
-                        })
-                      }
-                      placeholder="Punchlist date and time..."
-                    />
-                  </div>
-                  <ul className="site-list">
-                    {data.siteConditions.map((condition, index) => (
-                      <li key={index} className="site-item">
-                        <span className="site-bullet">-</span>
-                        <input
-                          className="site-input"
-                          value={condition}
-                          onChange={(event) =>
-                            dispatch({
-                              type: "setSiteCondition",
-                              index,
-                              value: event.target.value,
-                            })
-                          }
-                          placeholder="Add condition..."
-                        />
-                        <button
-                          className="site-remove"
-                          onClick={() =>
-                            dispatch({ type: "removeSiteCondition", index })
-                          }
-                        >
-                          x
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  <button
-                    className="add-inline"
-                    onClick={() => dispatch({ type: "addSiteCondition" })}
-                  >
-                    + Add condition
-                  </button>
-                </div>
-              )}
-
-              <div className="page-content">
-                <div
-                  className="page-content-body"
-                  style={{
-                    "--grid-cols": String(layoutMetrics.columns),
-                    "--content-rows": String(
-                      pageIdx === 0
-                        ? layoutMetrics.firstPageRows
-                        : layoutMetrics.otherPageRows,
-                    ),
-                  }}
-                >
-                  {contentSegs.map((seg, segIdx) =>
-                    seg.type === "rowGroup"
-                      ? renderRowGroup(seg, `page-${pageIdx}-row-${segIdx}`)
-                      : renderEmptySection(
-                          seg,
-                          `page-${pageIdx}-empty-${segIdx}`,
-                        ),
-                  )}
-                </div>
-                {pageIdx === pages.length - 1 && (
-                  <button
-                    className="add-room-btn"
-                    onClick={() => dispatch({ type: "addRoom" })}
-                  >
-                    + Add room
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {pages.map((page, pageIdx) =>
+          page.kind === "summary"
+            ? renderSummaryPage(page.segments, pageIdx, pages.length)
+            : renderDetailPage(
+                page.segments,
+                pageIdx,
+                pages.length,
+                pageIdx === lastDetailPageIndex,
+              ),
+        )}
       </div>
     </div>
   );

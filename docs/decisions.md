@@ -23,3 +23,11 @@ One entry per decision. Format: **what**, why, date. Exists to prevent re-litiga
 **Modular file structure** - split the original single file into `styles.css`, `idb.js`, `pagination.js`, `PhotoCell.jsx`, `ItemCard.jsx`, and `PunchListApp.jsx`. Each file has a single responsibility. 2026-03-11
 
 **Word import must preserve list structure (not raw text only)** - office users work in Microsoft Word, and `mammoth.extractRawText(...)` drops the list metadata that the importer needs for bullets, nesting, and section boundaries. Future `.docx` support should read structure first and derive plain text second. 2026-03-12
+
+**Persistent per-section issue sequences (not positional numbering)** - resolved items should be removable without renumbering the remaining open items. General Notes and each room keep their own ever-increasing issue sequence. 2026-03-12
+
+**Summary pages precede detailed pages** - the issued document should open with a dense text-first list of all open items before the photo/detail pages so the GC can scan the whole list quickly. 2026-03-12
+
+**Manual room sorting button by room number (not auto-sort on rename)** - room names should not jump around while the user is typing. Sorting happens only on explicit user action, using the extracted room number as the primary key. 2026-03-13
+
+**Notes copy uses clipboard outline text (not file export)** - the outline should be easy to paste into other tools directly. The copied text stays in the import-friendly bullet format with issue codes, and the importer strips that prefix back off on re-import. 2026-03-13

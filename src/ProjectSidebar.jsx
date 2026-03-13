@@ -12,6 +12,7 @@ export default function ProjectSidebar({
   onDelete,
   layout,
   onLayoutChange,
+  onSortRooms,
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const deleteTimers = {};
@@ -106,6 +107,13 @@ export default function ProjectSidebar({
             />
             <span>Show photos</span>
           </label>
+        </div>
+
+        <div className="sidebar-section">
+          <div className="sidebar-label">Rooms</div>
+          <button className="sidebar-action-btn" onClick={onSortRooms} type="button">
+            Sort Rooms
+          </button>
         </div>
 
         <div className="sidebar-actions">
