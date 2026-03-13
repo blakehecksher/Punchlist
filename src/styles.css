@@ -703,14 +703,14 @@ body {
   flex: 1;
 }
 .item-num {
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: #923b08;
   text-transform: uppercase;
 }
 .item-label {
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   color: #1a1a1a;
   text-transform: uppercase;
@@ -718,7 +718,7 @@ body {
 }
 .item-desc-edit {
   font-family: "EB Garamond", serif;
-  font-size: 12px;
+  font-size: 14px;
   color: #1a1a1a;
   line-height: 1.45;
   border: none;
@@ -1103,7 +1103,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.12s, background 0.12s;
+  transition:
+    color 0.12s,
+    background 0.12s;
 }
 .sidebar-item:hover .sidebar-item-delete {
   color: #666;
@@ -1189,7 +1191,9 @@ body {
   letter-spacing: 0.07em;
   text-transform: uppercase;
   text-align: left;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 .sidebar-action-btn:hover {
   background: #333;
@@ -1220,7 +1224,6 @@ body {
   z-index: 140;
   background: transparent;
 }
-
 
 /* ── Print ── */
 @media print {
