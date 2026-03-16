@@ -80,19 +80,6 @@ export default function PhotoCell({ projectId, itemId, photo, position, onPhoto,
     handleFile(file);
   }, [handleFile]);
 
-  const handleWheel = useCallback((e) => {
-    if (!photo) return;
-    e.preventDefault();
-    setPos(prev => {
-      const newScale = Math.min(4, Math.max(1, prev.scale - e.deltaY * 0.003));
-      const next = { ...prev, scale: newScale };
-      // Clamp position when zooming out
-      next.x = Math.max(0, Math.min(100, next.x));
-      next.y = Math.max(0, Math.min(100, next.y));
-      persistPosition(next);
-      return next;
-    });
-  }, [photo, persistPosition]);
 
   // Drag uses window-level listeners so it continues outside the cell.
   // We store the cleanup ref so mouseup can remove both listeners.
@@ -189,7 +176,6 @@ export default function PhotoCell({ projectId, itemId, photo, position, onPhoto,
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
       onClick={() => !photo && fileRef.current.click()}
-      onWheel={handleWheel}
       onMouseDown={handleMouseDown}
     >
       <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}

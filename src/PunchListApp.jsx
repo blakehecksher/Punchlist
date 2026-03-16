@@ -42,7 +42,8 @@ const getRoomSortNumber = (roomName) => {
   return Number.isFinite(numeric) ? numeric : Number.POSITIVE_INFINITY;
 };
 const compareRoomNames = (left, right) => {
-  const roomNumberDiff = getRoomSortNumber(left.name) - getRoomSortNumber(right.name);
+  const roomNumberDiff =
+    getRoomSortNumber(left.name) - getRoomSortNumber(right.name);
   if (roomNumberDiff !== 0) return roomNumberDiff;
   return left.name.trim().localeCompare(right.name.trim(), undefined, {
     numeric: true,
@@ -482,23 +483,24 @@ function reducer(state, action) {
         photoPosition: action.position,
       }));
 
-    case "addGeneralNote":
-      {
-        const nextIssueSeq = getNextIssueSeq(
-          state.generalNotes,
-          state.nextGeneralIssueSeq,
-        );
-        return {
-          ...state,
-          nextGeneralIssueSeq: nextIssueSeq + 1,
-          generalNotes: [...state.generalNotes, makeItem("", nextIssueSeq)],
-        };
-      }
+    case "addGeneralNote": {
+      const nextIssueSeq = getNextIssueSeq(
+        state.generalNotes,
+        state.nextGeneralIssueSeq,
+      );
+      return {
+        ...state,
+        nextGeneralIssueSeq: nextIssueSeq + 1,
+        generalNotes: [...state.generalNotes, makeItem("", nextIssueSeq)],
+      };
+    }
 
     case "removeGeneralNote":
       return {
         ...state,
-        generalNotes: state.generalNotes.filter((item) => item.id !== action.id),
+        generalNotes: state.generalNotes.filter(
+          (item) => item.id !== action.id,
+        ),
       };
 
     case "importNotes": {
@@ -606,9 +608,7 @@ function reducer(state, action) {
       return {
         ...state,
         rooms: state.rooms.map((room) =>
-          room.id !== action.roomId
-            ? room
-            : { ...room, name: action.name },
+          room.id !== action.roomId ? room : { ...room, name: action.name },
         ),
       };
 
@@ -648,9 +648,59 @@ function DocumentIcon() {
     >
       <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
       <path d="M14 2v6h6" />
-      <path d="M9 13h6" />
-      <path d="M9 17h6" />
-      <path d="M9 9h1" />
+      <path d="M9 13h6M9 17h6M9 9h1" />
+    </svg>
+  );
+}
+function ImportIcon() {
+  return (
+    <svg
+      className="btn-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path d="M12 3v12M8 11l4 4 4-4" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </svg>
+  );
+}
+function CopyIcon() {
+  return (
+    <svg
+      className="btn-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+function TrashIcon() {
+  return (
+    <svg
+      className="btn-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path d="M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    </svg>
+  );
+}
+function HelpIcon() {
+  return (
+    <svg
+      className="btn-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
     </svg>
   );
 }
@@ -665,6 +715,7 @@ export default function PunchListApp() {
   const [promptCopyStatus, setPromptCopyStatus] = useState("");
   const [clearConfirm, setClearConfirm] = useState(false);
   const clearTimer = useRef(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const [activeId, setActiveIdState] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -928,7 +979,11 @@ export default function PunchListApp() {
     ...data.generalNotes.map((item) => ({
       id: item.id,
       location: data.generalNotesTitle || "General",
-      issueCode: formatIssueCode("generalNotes", data.generalNotesTitle, item.issueSeq),
+      issueCode: formatIssueCode(
+        "generalNotes",
+        data.generalNotesTitle,
+        item.issueSeq,
+      ),
       description: item.description,
     })),
     ...data.rooms.flatMap((room) =>
@@ -940,7 +995,9 @@ export default function PunchListApp() {
       })),
     ),
   ];
-  const summaryPages = layout.showSummary ? paginateSummary(summaryEntries) : [];
+  const summaryPages = layout.showSummary
+    ? paginateSummary(summaryEntries)
+    : [];
   const detailPages = paginateDetail(data, layout, {
     includeSiteConditions: summaryPages.length === 0,
   });
@@ -955,20 +1012,22 @@ export default function PunchListApp() {
 
   const firstSectionChunk = {};
   const lastSectionChunk = {};
-  pages.flatMap((page) => page.segments).forEach((seg) => {
-    const chunks =
-      seg.type === "rowGroup"
-        ? seg.sections
-        : seg.type === "sectionEmpty"
-          ? [seg.section]
-          : [];
-    chunks.forEach((chunk) => {
-      lastSectionChunk[chunk.sectionId] = chunk;
-      if (!firstSectionChunk[chunk.sectionId]) {
-        firstSectionChunk[chunk.sectionId] = chunk;
-      }
+  pages
+    .flatMap((page) => page.segments)
+    .forEach((seg) => {
+      const chunks =
+        seg.type === "rowGroup"
+          ? seg.sections
+          : seg.type === "sectionEmpty"
+            ? [seg.section]
+            : [];
+      chunks.forEach((chunk) => {
+        lastSectionChunk[chunk.sectionId] = chunk;
+        if (!firstSectionChunk[chunk.sectionId]) {
+          firstSectionChunk[chunk.sectionId] = chunk;
+        }
+      });
     });
-  });
 
   const getSectionIssueCode = (section, item) =>
     formatIssueCode(section.kind, section.title, item.issueSeq);
@@ -1159,7 +1218,10 @@ export default function PunchListApp() {
   };
 
   const renderRowGroup = (seg, key) => {
-    const usedCols = seg.sections.reduce((sum, section) => sum + section.span, 0);
+    const usedCols = seg.sections.reduce(
+      (sum, section) => sum + section.span,
+      0,
+    );
     const remainingCols = layoutMetrics.columns - usedCols;
     const hasActions = seg.sections.some(
       (section) => lastSectionChunk[section.sectionId] === section,
@@ -1397,7 +1459,12 @@ export default function PunchListApp() {
     );
   };
 
-  const renderDetailPage = (segments, pageIdx, totalPages, isLastDetailPage) => {
+  const renderDetailPage = (
+    segments,
+    pageIdx,
+    totalPages,
+    isLastDetailPage,
+  ) => {
     const headerSegs = segments.filter(
       (seg) => seg.type === "header" || seg.type === "siteConditions",
     );
@@ -1470,7 +1537,31 @@ export default function PunchListApp() {
         <div className="toolbar-right">
           {saveStatus && <span className="save-status">{saveStatus}</span>}
           <button
-            className={`btn ${clearConfirm ? "btn-clear-confirm" : "btn-secondary"}`}
+            className="btn btn-secondary"
+            onClick={() => setHelpOpen((open) => !open)}
+            title="How to use this app"
+          >
+            <HelpIcon />
+            {helpOpen ? "Close Help" : "Help"}
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setImportOpen((open) => !open)}
+          >
+            <ImportIcon />
+            {importOpen ? "Close Import" : "Import Notes"}
+          </button>
+          <button className="btn btn-secondary" onClick={handleCopyNotes}>
+            <CopyIcon />
+            Copy Notes
+          </button>
+          <button className="btn btn-print" onClick={() => window.print()}>
+            <DocumentIcon />
+            Print / PDF
+          </button>
+          <div className="toolbar-divider" />
+          <button
+            className={`btn ${clearConfirm ? "btn-clear-confirm" : "btn-danger-idle"}`}
             onClick={() => {
               if (!clearConfirm) {
                 setClearConfirm(true);
@@ -1488,67 +1579,95 @@ export default function PunchListApp() {
               }
             }}
           >
+            <TrashIcon />
             {clearConfirm ? "Confirm Clear" : "Clear All"}
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => setImportOpen((open) => !open)}
-          >
-            {importOpen ? "Close Import" : "Import Notes"}
-          </button>
-          <button className="btn btn-secondary" onClick={handleCopyNotes}>
-            Copy Notes
-          </button>
-          <button className="btn btn-print" onClick={() => window.print()}>
-            <DocumentIcon />
-            Print / PDF
           </button>
         </div>
       </div>
 
+      {helpOpen && (
+        <div className="help-panel">
+          <div className="import-panel-header">
+            <div className="import-panel-label">How to Use</div>
+            <button
+              className="import-close"
+              onClick={() => setHelpOpen(false)}
+              aria-label="Close help panel"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="import-panel-body">
+            <ol className="help-steps">
+              {[
+                <>
+                  <strong>Write your punch list notes</strong> as a simple
+                  bulleted outline in any text editor — room name first, items
+                  indented beneath.
+                </>,
+                <>
+                  <strong>Click "Import Notes"</strong> and paste your outline.
+                  Use "Clean up with AI" if your notes are rough.
+                </>,
+                <>
+                  <strong>Attach photos</strong> to any item by clicking or
+                  dragging an image onto the photo area. Pan with drag, zoom
+                  with the +/− buttons.
+                </>,
+                <>
+                  <strong>Click "Print / PDF"</strong> to open the print dialog
+                  and save a formatted PDF.
+                </>,
+              ].map((text, i) => (
+                <li key={i}>
+                  <span className="help-step-num">{i + 1}</span>
+                  <span>{text}</span>
+                </li>
+              ))}
+            </ol>
+            <p className="help-note">
+              All data is saved automatically in your browser. Use the sidebar
+              (☰) to switch between projects.
+            </p>
+          </div>
+        </div>
+      )}
+
       {importOpen && (
         <div className="import-panel">
           <div className="import-panel-header">
-            <div>
-              <div className="import-panel-label">Import Punchlist Notes</div>
-              <div className="import-panel-copy">
-                Paste bulleted notes in the box below, or load a `.docx`, `.md`,
-                or `.txt` file.
-              </div>
-            </div>
+            <div className="import-panel-label">Import Punchlist Notes</div>
             <button
               className="import-close"
               onClick={() => setImportOpen(false)}
               aria-label="Close import panel"
             >
-              x
+              ✕
             </button>
           </div>
 
           <div className="import-panel-body">
+            <p className="import-section-heading">Note format</p>
             <p className="import-helper">
-              Format your notes as a bulleted outline - room name and number as
-              the top-level item, punch list items nested beneath. A{" "}
-              <strong>Site Conditions</strong> section will import into Site
-              Conditions. A <strong>General Notes</strong> section will import
-              into General Notes. See example below.
+              Each room is a top-level bullet. Items are indented beneath it.
+              Use a dash and a space <span className="import-code">- </span> for
+              each bullet, and 4 spaces (or a tab) to indent.
             </p>
             <pre className="import-example">{`- Study 410
     - Install smoke/CO detector
     - Drop shelves
         - 1st shelf drop by 1 pin
-        - 2nd shelf drop by 1 pin`}</pre>
-            <div className="import-tip-row">
-              <p className="import-helper import-tip">
-                Tip: Copy this prompt into a chatbot, paste your raw notes after
-                it, then paste the chatbot&apos;s cleaned bullet list here.
-              </p>
-              <button className="copy-prompt-btn" onClick={handleCopyPrompt}>
-                Copy prompt
-                {promptCopyStatus ? ` ${promptCopyStatus}` : " ->"}
-              </button>
-            </div>
-            <pre className="import-prompt">{IMPORT_CLEANUP_PROMPT}</pre>
+- Kitchen 102
+    - Adjust cabinet reveal`}</pre>
+            <p className="import-helper import-helper--muted">
+              <strong>Site Conditions</strong> and{" "}
+              <strong>General Notes</strong> are also supported as top-level
+              bullets.
+            </p>
+
+            <div className="import-divider" />
+
+            <p className="import-section-heading">Paste your notes</p>
             <textarea
               className="import-textarea"
               value={importText}
@@ -1557,12 +1676,24 @@ export default function PunchListApp() {
                 setImportStatus("");
               }}
               onPaste={handleImportPaste}
-              placeholder="Paste import text here..."
-              rows={12}
+              placeholder="Paste your bulleted outline here..."
+              rows={6}
             />
             <div className="import-actions">
               <label className="import-file-btn">
-                Load .docx / .md / .txt
+                <svg
+                  className="import-file-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <path d="M14 2v6h6" />
+                </svg>
+                Load File
                 <input
                   type="file"
                   accept=".doc,.docx,.md,.markdown,.txt,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
@@ -1571,12 +1702,25 @@ export default function PunchListApp() {
                 />
               </label>
               <button className="btn btn-import" onClick={handleImportSubmit}>
-                Add To List
+                <ImportIcon />
+                Import
               </button>
             </div>
             {importStatus && (
               <div className="import-status">{importStatus}</div>
             )}
+
+            <div className="import-divider" />
+
+            <p className="import-section-heading">Notes look messy?</p>
+            <p className="import-helper import-helper--muted">
+              Click button below to copy prompt for use with ChatGPT or Claude.
+              <br /> Paste your raw notes after it, then paste the cleaned
+              result above.
+            </p>
+            <button className="copy-prompt-btn" onClick={handleCopyPrompt}>
+              {promptCopyStatus ? promptCopyStatus : "Copy formatting prompt"}
+            </button>
           </div>
         </div>
       )}
@@ -1591,6 +1735,40 @@ export default function PunchListApp() {
                 pages.length,
                 pageIdx === lastDetailPageIndex,
               ),
+        )}
+        {data.rooms.length === 0 && data.generalNotes.length === 0 && (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6M9 13h6M9 17h4" />
+              </svg>
+            </div>
+            <h2 className="empty-state-heading">Start your punch list</h2>
+            <p className="empty-state-body">
+              Write your notes as a bulleted outline — room name first, items
+              indented beneath — then import them here.
+            </p>
+            <pre className="empty-state-example">{`- Living Room 101\n    - Touch up paint at window return\n    - Adjust door sweep\n- Kitchen 102\n    - Verify appliance alignment`}</pre>
+            <button
+              className="btn btn-import empty-state-btn"
+              onClick={() => setImportOpen(true)}
+            >
+              <ImportIcon />
+              Import Notes
+            </button>
+            <p className="empty-state-hint">
+              Or add a room manually using the "Add room" button on the page
+              above.
+            </p>
+          </div>
         )}
       </div>
     </div>

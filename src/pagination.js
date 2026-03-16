@@ -2,7 +2,7 @@ import { getLayoutMetrics } from "./layout.js";
 
 export const GENERAL_NOTES_SECTION_ID = "__general_notes__";
 export const SUMMARY_ROWS_FIRST = 20;
-export const SUMMARY_ROWS_OTHER = 32;
+export const SUMMARY_ROWS_OTHER = 30;
 const SUMMARY_DESC_CHARS_PER_LINE = 125;
 const MAX_SUMMARY_LINE_SPAN = 3;
 

@@ -85,17 +85,22 @@ export default function ProjectSidebar({
 
         <div className="sidebar-section">
           <div className="sidebar-label">Layout</div>
+          <div className="sidebar-label-sub">Card size per page</div>
           <div className="sidebar-density">
-            {DENSITY_OPTIONS.map((density) => (
-              <button
-                key={density}
-                className={`sidebar-density-btn${layout.density === density ? " sidebar-density-btn--active" : ""}`}
-                onClick={() => onLayoutChange({ density })}
-                type="button"
-              >
-                {density}
-              </button>
-            ))}
+            {DENSITY_OPTIONS.map((density, i) => {
+              const labels = ["Large", "Medium", "Small"];
+              return (
+                <button
+                  key={density}
+                  className={`sidebar-density-btn${layout.density === density ? " sidebar-density-btn--active" : ""}`}
+                  onClick={() => onLayoutChange({ density })}
+                  type="button"
+                  title={`${labels[i]} cards (${density} grid)`}
+                >
+                  {labels[i]}
+                </button>
+              );
+            })}
           </div>
           <label className="sidebar-toggle-row">
             <input
@@ -105,7 +110,7 @@ export default function ProjectSidebar({
                 onLayoutChange({ showPhotos: event.target.checked })
               }
             />
-            <span>Show photos</span>
+            <span>Show photo slots</span>
           </label>
           <label className="sidebar-toggle-row">
             <input
@@ -115,18 +120,23 @@ export default function ProjectSidebar({
                 onLayoutChange({ showSummary: event.target.checked })
               }
             />
-            <span>Summary</span>
+            <span>Include summary page</span>
           </label>
         </div>
 
         <div className="sidebar-section">
           <div className="sidebar-label">Rooms</div>
+          <div className="sidebar-label-sub">Sort by room number prefix</div>
           <button className="sidebar-action-btn" onClick={onSortRooms} type="button">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M3 6h18M7 12h10M11 18h2" />
+            </svg>
             Sort Rooms
           </button>
         </div>
 
-        <div className="sidebar-actions">
+        <div className="sidebar-section sidebar-section--actions">
+          <div className="sidebar-label">Actions</div>
           <button className="sidebar-action-btn sidebar-action-btn--primary" onClick={onNew}>
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 5v14M5 12h14" />
