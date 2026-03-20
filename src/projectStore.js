@@ -51,15 +51,10 @@ export function saveProjectData(id, data) {
   // Update lastSaved + name in index
   const index = loadIndex();
   const entry = index.find((e) => e.id === id);
-  const now = new Date().toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
   if (entry) {
     entry.name = data.project || "Untitled";
     entry.projectNum = data.projectNum || "";
-    entry.lastSaved = now;
+    entry.lastSaved = data.date || "";
     saveIndex(index);
   }
 }
@@ -85,16 +80,11 @@ export function setActiveId(id) {
 export function createProject(data) {
   const id = uid();
   const index = loadIndex();
-  const now = new Date().toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
   index.push({
     id,
     name: data.project || "Untitled",
     projectNum: data.projectNum || "",
-    lastSaved: now,
+    lastSaved: data.date || "",
   });
   saveIndex(index);
   saveProjectData(id, data);
