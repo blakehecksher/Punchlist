@@ -1286,6 +1286,9 @@ body {
   background: #a84510;
   border-color: #bf5015;
 }
+label.sidebar-action-btn {
+  cursor: pointer;
+}
 .sidebar-action-btn svg {
   width: 13px;
   height: 13px;

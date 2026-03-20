@@ -13,6 +13,8 @@ export default function ProjectSidebar({
   layout,
   onLayoutChange,
   onSortRooms,
+  onSaveToFile,
+  onLoadFromFile,
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const deleteTimers = {};
@@ -150,6 +152,30 @@ export default function ProjectSidebar({
             </svg>
             Duplicate Current
           </button>
+        </div>
+
+        <div className="sidebar-section sidebar-section--actions">
+          <div className="sidebar-label">File</div>
+          <button className="sidebar-action-btn" onClick={onSaveToFile}>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 3v12M8 11l4 4 4-4" />
+              <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+            </svg>
+            Save to File
+          </button>
+          <label className="sidebar-action-btn sidebar-file-label">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 15V3M8 7l4-4 4 4" />
+              <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+            </svg>
+            Load from File
+            <input
+              type="file"
+              accept=".json,application/json"
+              onChange={onLoadFromFile}
+              hidden
+            />
+          </label>
         </div>
       </div>
 

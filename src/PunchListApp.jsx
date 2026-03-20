@@ -8,6 +8,11 @@ import { readImportFile } from "./importFile.js";
 import { parseImportText } from "./importParser.js";
 import { copyNotesToClipboard } from "./exportNotes.js";
 import {
+  saveProjectToFile,
+  loadProjectFromFile,
+  restorePhotosToIdb,
+} from "./projectFile.js";
+import {
   formatIssueCode,
   getNextIssueSeq,
   getRoomIssuePrefix,
@@ -968,6 +973,60 @@ export default function PunchListApp() {
     }
   }, [data]);
 
+  const handleSaveToFile = useCallback(async () => {
+    try {
+      await saveProjectToFile(activeIdRef.current, stripPhotos(data));
+      setSaveStatus("File saved");
+      setTimeout(() => setSaveStatus(""), 1500);
+    } catch {
+      setSaveStatus("Save failed");
+      setTimeout(() => setSaveStatus(""), 1500);
+    }
+  }, [data]);
+
+  const handleLoadFromFile = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      event.target.value = "";
+
+      try {
+        const { data: fileData, photos } = await loadProjectFromFile(file);
+
+        // Save current project first
+        if (activeIdRef.current) {
+          saveProjectData(activeIdRef.current, stripPhotos(data));
+        }
+
+        // Create a new project from the file
+        const id = createProject(fileData);
+        activeIdRef.current = id;
+        setActiveIdState(id);
+        setActiveId(id);
+
+        // Restore photos into IndexedDB
+        await restorePhotosToIdb(id, photos);
+
+        // Load with photos merged in
+        const normalizedPhotos = await idbGetAllPhotos(id);
+        dispatch({
+          type: "load",
+          data: normalizeStoredData(fileData, normalizedPhotos),
+        });
+
+        refreshIndex();
+        setSaveStatus("File loaded");
+        setTimeout(() => setSaveStatus(""), 1500);
+      } catch (error) {
+        setSaveStatus(
+          error instanceof Error ? error.message : "Load failed",
+        );
+        setTimeout(() => setSaveStatus(""), 3000);
+      }
+    },
+    [data],
+  );
+
   const layout = normalizeLayout(data.layout);
   const layoutMetrics = getLayoutMetrics(layout);
   const summaryEntries = [
@@ -1517,6 +1576,8 @@ export default function PunchListApp() {
           dispatch({ type: "setLayout", layout: layoutUpdate })
         }
         onSortRooms={handleSortRooms}
+        onSaveToFile={handleSaveToFile}
+        onLoadFromFile={handleLoadFromFile}
       />
 
       <div className="toolbar">
