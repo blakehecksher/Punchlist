@@ -38,6 +38,16 @@ function ensureSection(sections, rawName) {
   return section;
 }
 
+function convertInlineMarkdownToHtml(text) {
+  if (!text.includes("*") && !text.includes("_") && !text.includes("~")) return text;
+  let result = text;
+  result = result.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  result = result.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
+  result = result.replace(/__(.+?)__/g, "<u>$1</u>");
+  result = result.replace(/~~(.+?)~~/g, "<s>$1</s>");
+  return result;
+}
+
 function finalizeSections(sections) {
   const siteConditions = [];
   const generalNotes = [];
@@ -45,7 +55,7 @@ function finalizeSections(sections) {
 
   sections.forEach((section) => {
     const cleanedItems = section.items
-      .map((item) => item.replace(ISSUE_CODE_PREFIX_RE, "").trim())
+      .map((item) => convertInlineMarkdownToHtml(item.replace(ISSUE_CODE_PREFIX_RE, "").trim()))
       .filter(Boolean);
     if (cleanedItems.length === 0) return;
     if (section.type === "siteConditions") {

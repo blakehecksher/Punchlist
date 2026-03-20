@@ -1,7 +1,18 @@
 import { formatIssueCode } from "./issueIds.js";
 
+function htmlToMarkdown(html) {
+  if (!html || !html.includes("<")) return html;
+  return html
+    .replace(/<b>(.*?)<\/b>/gi, "**$1**")
+    .replace(/<i>(.*?)<\/i>/gi, "*$1*")
+    .replace(/<u>(.*?)<\/u>/gi, "__$1__")
+    .replace(/<s>(.*?)<\/s>/gi, "~~$1~~")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]+>/g, "");
+}
+
 function formatItemLine(issueCode, description) {
-  return `    - ${issueCode}: ${(description || "").trim()}`;
+  return `    - ${issueCode}: ${htmlToMarkdown((description || "").trim())}`;
 }
 
 export function buildExportMarkdown(data) {

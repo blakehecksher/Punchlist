@@ -75,6 +75,49 @@ function getNodeText(node, options = {}) {
   return text;
 }
 
+const INLINE_FORMAT_TAGS = {
+  B: "**", STRONG: "**",
+  I: "*", EM: "*",
+  U: "__",
+  S: "~~", DEL: "~~", STRIKE: "~~",
+};
+
+function wrapMarkdown(marker, inner) {
+  const leading = inner.match(/^\s*/)[0];
+  const trailing = inner.match(/\s*$/)[0];
+  const content = inner.trim();
+  if (!content) return inner;
+  return `${leading}${marker}${content}${marker}${trailing}`;
+}
+
+function nodeToMarkdownText(node) {
+  if (isTextNode(node)) return node.textContent ?? "";
+  if (!isElementNode(node)) return "";
+  if (isListNode(node) || isWordListIgnoreNode(node)) return "";
+
+  const tag = node.tagName;
+  let inner = "";
+  for (const child of node.childNodes) {
+    inner += nodeToMarkdownText(child);
+  }
+
+  const marker = INLINE_FORMAT_TAGS[tag];
+  if (marker && inner.trim()) return wrapMarkdown(marker, inner);
+  return inner;
+}
+
+function getNodeRichText(node, options = {}) {
+  if (isTextNode(node)) return normalizeWhitespace(node.textContent ?? "");
+  if (!isElementNode(node) || isListNode(node) || isWordListIgnoreNode(node)) return "";
+
+  const clone = node.cloneNode(true);
+  sanitizeTextClone(clone);
+
+  let text = normalizeWhitespace(nodeToMarkdownText(clone));
+  if (options.wordList) text = stripWordListMarker(text);
+  return text;
+}
+
 function getWordListDepth(node) {
   const styleText = getStyleText(node);
   const levelMatch = styleText.match(/level(\d+)/i);
@@ -244,10 +287,12 @@ function collectSignificantNodes(root, nodes = []) {
     if (isWordListParagraph(child)) {
       const text = getNodeText(child, { wordList: true });
       if (text) {
+        const richText = getNodeRichText(child, { wordList: true });
         nodes.push({
           type: "wordList",
           node: child,
           text,
+          richText: richText !== text ? richText : text,
           explicitDepth: getWordListDepth(child),
           marginLeft: getWordListMarginLeft(child),
           markerIndent: getWordListMarkerIndent(child),
@@ -296,7 +341,8 @@ function appendListLines(listNode, depth, lines) {
     if (!isElementNode(child) || child.tagName !== "LI") return;
 
     const text = getNodeText(child);
-    if (text) lines.push(`${BULLET_INDENT.repeat(depth)}- ${text}`);
+    const richText = getNodeRichText(child);
+    if (richText) lines.push(`${BULLET_INDENT.repeat(depth)}- ${richText}`);
 
     const nestedDepth = text ? depth + 1 : depth;
     Array.from(child.children)
@@ -336,12 +382,17 @@ export function convertHtmlToImportText(html) {
     }
 
     if (entry.type === "wordList") {
-      lines.push(`${BULLET_INDENT.repeat(entry.depth)}- ${entry.text}`);
+      lines.push(`${BULLET_INDENT.repeat(entry.depth)}- ${entry.richText || entry.text}`);
       return;
     }
 
     const nextEntry = entries[index + 1] ?? null;
-    lines.push(looksLikeHeading(entry.node, entry.text, nextEntry) ? ensureTrailingColon(entry.text) : entry.text);
+    if (looksLikeHeading(entry.node, entry.text, nextEntry)) {
+      lines.push(ensureTrailingColon(entry.text));
+    } else {
+      const richText = getNodeRichText(entry.node);
+      lines.push(richText || entry.text);
+    }
   });
 
   return lines.join("\n").trim();

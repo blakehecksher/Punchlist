@@ -1,10 +1,5 @@
 import PhotoCell from "./PhotoCell.jsx";
-
-const ROWS_BY_DENSITY = {
-  "2x2": 4,
-  "3x3": 3,
-  "4x4": 2,
-};
+import RichText from "./RichText.jsx";
 
 export default function ItemCard({
   projectId,
@@ -30,12 +25,11 @@ export default function ItemCard({
       <div className="item-text">
         <div className="item-num">{issueCode}</div>
         <div className="item-label">Description:</div>
-        <textarea
+        <RichText
           className="item-desc-edit"
           value={item.description}
-          onChange={(e) => onDescChange(e.target.value)}
+          onChange={(html) => onDescChange(html)}
           placeholder="Click here to enter description"
-          rows={ROWS_BY_DENSITY[density] ?? 3}
         />
         <button className="item-remove" onClick={onRemove} title="Remove item">
           x

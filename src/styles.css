@@ -445,7 +445,6 @@ body {
   padding: 3px 6px;
   border: none;
   outline: none;
-  resize: none;
   box-sizing: border-box;
   background: transparent;
   font-family: "EB Garamond", serif;
@@ -455,6 +454,13 @@ body {
   white-space: normal;
   overflow-wrap: anywhere;
   overflow: hidden;
+  word-wrap: break-word;
+  cursor: text;
+}
+.summary-desc-edit:empty::before {
+  content: attr(data-placeholder);
+  color: #9a9a9a;
+  pointer-events: none;
 }
 .summary-desc-edit:focus {
   background: #fafaf8;
@@ -770,18 +776,34 @@ body {
   line-height: 1.45;
   border: none;
   outline: none;
-  resize: none;
   width: 100%;
   flex: 1;
   background: transparent;
   min-height: 60px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  cursor: text;
 }
-.item-desc-edit::placeholder {
+.item-desc-edit:empty::before {
+  content: attr(data-placeholder);
   color: #9a9a9a;
+  pointer-events: none;
 }
 .item-desc-edit:focus {
   background: #fafaf8;
 }
+
+/* Inline formatting inside rich-text description fields */
+.item-desc-edit s,
+.summary-desc-edit s {
+  text-decoration: line-through;
+}
+.item-desc-edit u,
+.summary-desc-edit u {
+  text-decoration: underline;
+}
+
 .item-remove {
   position: absolute;
   top: 5px;
@@ -1447,11 +1469,16 @@ body {
     break-after: avoid;
   }
   .item-desc-edit,
+  .summary-desc-edit,
   .site-input,
   .room-name-input,
   .doc-header input,
   .gn-title-input {
     background: transparent !important;
+  }
+  .item-desc-edit:empty::before,
+  .summary-desc-edit:empty::before {
+    display: none !important;
   }
   .photo-cell {
     cursor: default !important;

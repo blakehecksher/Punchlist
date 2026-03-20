@@ -20,6 +20,7 @@ import {
   paginateSummary,
 } from "./pagination.js";
 import ItemCard from "./ItemCard.jsx";
+import RichText from "./RichText.jsx";
 import ProjectSidebar from "./ProjectSidebar.jsx";
 import {
   loadIndex,
@@ -65,12 +66,6 @@ const getCurrentDateLabel = (date = new Date()) =>
     day: "numeric",
     year: "numeric",
   }).format(date);
-const autosizeTextarea = (element) => {
-  if (!element) return;
-  element.style.height = "0px";
-  element.style.height = `${element.scrollHeight}px`;
-};
-
 const IMPORT_CLEANUP_PROMPT = `I will paste raw punch list notes below. Rewrite them so they can be imported into a punch list tool.
 
 Follow these rules:
@@ -1147,22 +1142,18 @@ export default function PunchListApp() {
 
   const renderSummaryDescriptionCell = (entry) => (
     <div className="summary-cell summary-cell--description">
-      <textarea
+      <RichText
         className="summary-desc-edit"
-        ref={autosizeTextarea}
         value={entry.description}
-        onInput={(event) => autosizeTextarea(event.currentTarget)}
-        onChange={(event) => {
-          autosizeTextarea(event.currentTarget);
+        onChange={(html) =>
           dispatch({
             type: "updateItem",
             id: entry.id,
             field: "description",
-            value: event.target.value,
-          });
-        }}
+            value: html,
+          })
+        }
         placeholder="Click here to enter description"
-        rows={1}
       />
     </div>
   );
