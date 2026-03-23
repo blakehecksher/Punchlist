@@ -147,6 +147,7 @@ function makeBlankProjectData() {
     firm: "Firm Name",
     punchlistDate: "",
     generalNotesTitle: "General",
+    headerNote: "",
     layout: { ...DEFAULT_LAYOUT },
     nextGeneralIssueSeq: 1,
     siteConditions: [],
@@ -166,6 +167,8 @@ function makeRoom(name = "Room Name", firstDescription = "") {
 
 const INITIAL_DATA = {
   ...makeBlankProjectData(),
+  headerNote:
+    "Items shown in <b>bold type</b> indicate revisions.\nItems shown with <s>strikethrough type</s> are complete as of this walkthrough and will be removed from subsequent punch list.",
   nextGeneralIssueSeq: 5,
   siteConditions: [
     "Example condition: final painting touch-ups are in progress",
@@ -1407,6 +1410,19 @@ export default function PunchListApp() {
     </>
   );
 
+  const renderHeaderNote = () => (
+    <div className="header-note">
+      <RichText
+        value={data.headerNote ?? ""}
+        onChange={(html) =>
+          dispatch({ type: "setField", field: "headerNote", value: html })
+        }
+        placeholder="Header note..."
+        className="header-note-input"
+      />
+    </div>
+  );
+
   const renderSiteConditions = () => (
     <div>
       <div className="section-label-row">
@@ -1468,8 +1484,12 @@ export default function PunchListApp() {
     return (
       <div key={`summary-${pageIdx}`} className="page page--summary">
         {renderDocumentHeader(pageIdx + 1, totalPages)}
-        {headerSegs.some((seg) => seg.type === "siteConditions") &&
-          renderSiteConditions()}
+        {headerSegs.some((seg) => seg.type === "siteConditions") && (
+          <>
+            {renderHeaderNote()}
+            {renderSiteConditions()}
+          </>
+        )}
 
         <div className="summary-page-body">
           <div className="summary-header-row">
@@ -1526,8 +1546,12 @@ export default function PunchListApp() {
       <div key={`detail-${pageIdx}`} className={pageClassName}>
         {renderDocumentHeader(pageIdx + 1, totalPages)}
 
-        {headerSegs.some((seg) => seg.type === "siteConditions") &&
-          renderSiteConditions()}
+        {headerSegs.some((seg) => seg.type === "siteConditions") && (
+          <>
+            {renderHeaderNote()}
+            {renderSiteConditions()}
+          </>
+        )}
 
         <div className="page-content">
           <div

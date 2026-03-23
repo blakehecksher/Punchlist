@@ -188,14 +188,17 @@ export default function PhotoCell({ projectId, itemId, photo, position, onPhoto,
           <button className="photo-btn" onClick={handleRemove}>✕</button>
         </div>
       ) : (
-        <div className="photo-drop-hint">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <rect x="3" y="3" width="18" height="18" rx="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <path d="M21 15l-5-5L5 21"/>
-          </svg>
-          <span>Drop photo</span>
-        </div>
+        <>
+          <div className="photo-drop-hint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <path d="M21 15l-5-5L5 21"/>
+            </svg>
+            <span>Drop photo</span>
+          </div>
+          <div className="photo-empty-label">No Photo Provided</div>
+        </>
       )}
     </div>
   );
