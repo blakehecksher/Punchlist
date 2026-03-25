@@ -230,6 +230,40 @@ body {
   border-top: 1px solid #ece2dc;
   margin: 14px 0;
 }
+.import-mode-toggle {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.import-mode-btn {
+  flex: 1;
+  min-height: 32px;
+  border: 1px solid #d9cec6;
+  background: #f8f4f1;
+  color: #7a675b;
+  cursor: pointer;
+  font-family: "Lato", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition:
+    border-color 0.12s,
+    background 0.12s,
+    color 0.12s;
+}
+.import-mode-btn:hover {
+  border-color: #923b08;
+  color: #923b08;
+}
+.import-mode-btn.active {
+  background: #923b08;
+  border-color: #923b08;
+  color: white;
+}
+.import-mode-helper {
+  margin-top: 8px;
+}
 .import-file-icon {
   width: 13px;
   height: 13px;
@@ -368,11 +402,23 @@ body {
   margin-top: 14px;
   margin-bottom: 8px;
 }
+.summary-header-row--detail {
+  justify-content: flex-end;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
 .summary-count {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
   font-size: 11px;
   color: #6f6258;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+.summary-stat {
+  white-space: nowrap;
 }
 .summary-table-head,
 .summary-row {
@@ -568,6 +614,7 @@ body {
 .header-note-input {
   font-size: 11px;
   font-family: "Times New Roman", Times, serif;
+  font-style: italic;
   color: #555;
   line-height: 1.4;
   min-height: 1.2em;

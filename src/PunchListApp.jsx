@@ -56,10 +56,11 @@ const compareRoomNames = (left, right) => {
     sensitivity: "base",
   });
 };
-const makeItem = (description = "", issueSeq = 1) => ({
+const makeItem = (description = "", issueSeq = 1, isNew = false) => ({
   id: uid(),
   description,
   issueSeq,
+  isNew,
   photo: null,
   photoPosition: null,
 });
@@ -108,6 +109,8 @@ Use this exact format:
 
 After these instructions, I will paste my raw notes.
 Reply with the cleaned bullet list only.`;
+const DEFAULT_HEADER_NOTE =
+  "Items shown <u>underlined</u> are new as of this walkthrough.<br>Items shown in <b>bold</b> type indicate revisions.<br>Items shown with <s>strikethrough</s> type are complete as of this walkthrough and will be removed from subsequent punch list.";
 
 function summarizeImport(parsed) {
   const roomCount = parsed.rooms.length;
@@ -138,16 +141,223 @@ function summarizeImport(parsed) {
     : "Nothing imported.";
 }
 
+function containsInlineTag(html, tagName) {
+  const patterns = {
+    b: [
+      /<(?:b|strong)(?:\s|>)/i,
+      /font-weight\s*:\s*(?:bold|[5-9]00)/i,
+    ],
+    s: [
+      /<(?:s|del|strike|x)(?:\s|>)/i,
+      /text-decoration[^>"]*line-through/i,
+    ],
+    u: [
+      /<u(?:\s|>)/i,
+      /text-decoration[^>"]*underline/i,
+    ],
+  };
+
+  return (patterns[tagName] || []).some((pattern) => pattern.test(html ?? ""));
+}
+
+function getIssueCodeStyle({ isNew = false, isCompleted = false } = {}) {
+  const textDecorationLine = [
+    isNew ? "underline" : null,
+    isCompleted ? "line-through" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (!textDecorationLine) return undefined;
+
+  return {
+    textDecorationLine,
+    textUnderlineOffset: isNew ? "1px" : undefined,
+  };
+}
+
+function summarizeEntries(entries) {
+  return entries.reduce(
+    (counts, entry) => ({
+      total: counts.total + 1,
+      new: counts.new + (entry.isNew ? 1 : 0),
+      revised: counts.revised + (entry.isRevised ? 1 : 0),
+      completed: counts.completed + (entry.isCompleted ? 1 : 0),
+    }),
+    { total: 0, new: 0, revised: 0, completed: 0 },
+  );
+}
+
+function buildIssueCodeIndex(items, kind, title) {
+  return new Map(
+    items.map((item, index) => [
+      formatIssueCode(kind, title, item.issueSeq).toUpperCase(),
+      index,
+    ]),
+  );
+}
+
+function mergeImportedNotes(state, payload) {
+  const rooms = state.rooms.map((room) => ({
+    ...room,
+    items: [...room.items],
+  }));
+  const roomIndexByKey = new Map(
+    rooms.map((room, index) => [normalizeRoomKey(room.name), index]),
+  );
+  const nextGeneralNotes = [...state.generalNotes];
+  const generalNoteIndexByCode = buildIssueCodeIndex(
+    nextGeneralNotes,
+    "generalNotes",
+    state.generalNotesTitle,
+  );
+  let nextGeneralIssueSeq = getNextIssueSeq(
+    nextGeneralNotes,
+    state.nextGeneralIssueSeq,
+  );
+  let updatedCount = 0;
+  let newCount = 0;
+
+  payload.generalNotes.forEach((imported) => {
+    const existingIndex =
+      imported.issueCode && generalNoteIndexByCode.has(imported.issueCode)
+        ? generalNoteIndexByCode.get(imported.issueCode)
+        : undefined;
+
+    if (existingIndex !== undefined) {
+      nextGeneralNotes[existingIndex] = {
+        ...nextGeneralNotes[existingIndex],
+        description: imported.description,
+        isNew: imported.isNew,
+      };
+      updatedCount += 1;
+      return;
+    }
+
+    nextGeneralNotes.push(
+      makeItem(imported.description, nextGeneralIssueSeq, imported.isNew),
+    );
+    nextGeneralIssueSeq += 1;
+    newCount += 1;
+  });
+
+  payload.rooms.forEach((room) => {
+    const key = normalizeRoomKey(room.name);
+    const existingIndex = roomIndexByKey.get(key);
+
+    if (existingIndex !== undefined) {
+      const existingRoom = rooms[existingIndex];
+      const nextItems = [...existingRoom.items];
+      const roomItemIndexByCode = buildIssueCodeIndex(
+        nextItems,
+        "room",
+        existingRoom.name,
+      );
+      let nextRoomIssueSeq = getNextIssueSeq(
+        nextItems,
+        existingRoom.nextItemIssueSeq,
+      );
+
+      room.items.forEach((imported) => {
+        const matchedIndex =
+          imported.issueCode && roomItemIndexByCode.has(imported.issueCode)
+            ? roomItemIndexByCode.get(imported.issueCode)
+            : undefined;
+
+        if (matchedIndex !== undefined) {
+          nextItems[matchedIndex] = {
+            ...nextItems[matchedIndex],
+            description: imported.description,
+            isNew: imported.isNew,
+          };
+          updatedCount += 1;
+          return;
+        }
+
+        nextItems.push(
+          makeItem(imported.description, nextRoomIssueSeq, imported.isNew),
+        );
+        nextRoomIssueSeq += 1;
+        newCount += 1;
+      });
+
+      rooms[existingIndex] = {
+        ...existingRoom,
+        nextItemIssueSeq: nextRoomIssueSeq,
+        items: nextItems,
+      };
+      return;
+    }
+
+    let nextRoomIssueSeq = 1;
+    const importedItems = room.items.map((imported) => {
+      const item = makeItem(
+        imported.description,
+        nextRoomIssueSeq,
+        imported.isNew,
+      );
+      nextRoomIssueSeq += 1;
+      newCount += 1;
+      return item;
+    });
+    roomIndexByKey.set(key, rooms.length);
+    rooms.push({
+      id: uid(),
+      name: room.name,
+      nextItemIssueSeq: nextRoomIssueSeq,
+      items: importedItems,
+    });
+  });
+
+  return {
+    data: {
+      ...state,
+      nextGeneralIssueSeq,
+      siteConditions: [...payload.siteConditions],
+      generalNotes: nextGeneralNotes,
+      rooms,
+    },
+    counts: {
+      updatedCount,
+      newCount,
+      affectedRoomCount: payload.rooms.length,
+      replacedSiteConditions:
+        payload.siteConditions.length > 0 || state.siteConditions.length > 0,
+    },
+  };
+}
+
+function summarizeMerge(parsed, state) {
+  const { counts } = mergeImportedNotes(state, parsed);
+  const totalTouched = counts.updatedCount + counts.newCount;
+
+  if (totalTouched === 0) {
+    return counts.replacedSiteConditions
+      ? "Merged: site conditions replaced."
+      : "Nothing merged.";
+  }
+
+  const roomPart =
+    counts.affectedRoomCount > 0
+      ? ` across ${counts.affectedRoomCount} room${counts.affectedRoomCount === 1 ? "" : "s"}`
+      : "";
+  const siteConditionsPart = counts.replacedSiteConditions
+    ? " Site conditions replaced."
+    : "";
+
+  return `Merged: ${counts.updatedCount} updated, ${counts.newCount} new item${counts.newCount === 1 ? "" : "s"}${roomPart}.${siteConditionsPart}`;
+}
+
 function makeBlankProjectData() {
   return {
     project: "Project Name",
     projectNum: "Proj. # 0000",
-    title: "Punchlist",
+    title: "Punch List",
     date: getCurrentDateLabel(),
     firm: "Firm Name",
     punchlistDate: "",
     generalNotesTitle: "General",
-    headerNote: "",
+    headerNote: DEFAULT_HEADER_NOTE,
     layout: { ...DEFAULT_LAYOUT },
     nextGeneralIssueSeq: 1,
     siteConditions: [],
@@ -161,14 +371,12 @@ function makeRoom(name = "Room Name", firstDescription = "") {
     id: uid(),
     name,
     nextItemIssueSeq: 2,
-    items: [makeItem(firstDescription, 1)],
+    items: [makeItem(firstDescription, 1, true)],
   };
 }
 
 const INITIAL_DATA = {
   ...makeBlankProjectData(),
-  headerNote:
-    "Items shown in <b>bold type</b> indicate revisions.\nItems shown with <s>strikethrough type</s> are complete as of this walkthrough and will be removed from subsequent punch list.",
   nextGeneralIssueSeq: 5,
   siteConditions: [
     "Example condition: final painting touch-ups are in progress",
@@ -343,12 +551,13 @@ const INITIAL_DATA = {
 function normalizeStoredData(stored, photos = {}) {
   const mergePhotos = (items = []) =>
     items.map((item) => {
+      const normalizedItem = { ...item, isNew: Boolean(item.isNew) };
       const entry = photos[item.id];
-      if (!entry) return { ...item, photo: null, photoPosition: null };
+      if (!entry) return { ...normalizedItem, photo: null, photoPosition: null };
       if (typeof entry === "string")
-        return { ...item, photo: entry, photoPosition: null };
+        return { ...normalizedItem, photo: entry, photoPosition: null };
       return {
-        ...item,
+        ...normalizedItem,
         photo: entry.dataUrl,
         photoPosition: entry.position ?? null,
       };
@@ -494,7 +703,7 @@ function reducer(state, action) {
       return {
         ...state,
         nextGeneralIssueSeq: nextIssueSeq + 1,
-        generalNotes: [...state.generalNotes, makeItem("", nextIssueSeq)],
+        generalNotes: [...state.generalNotes, makeItem("", nextIssueSeq, true)],
       };
     }
 
@@ -523,8 +732,10 @@ function reducer(state, action) {
         nextGeneralNotes,
         state.nextGeneralIssueSeq,
       );
-      action.payload.generalNotes.forEach((description) => {
-        nextGeneralNotes.push(makeItem(description, nextGeneralIssueSeq));
+      action.payload.generalNotes.forEach((imported) => {
+        nextGeneralNotes.push(
+          makeItem(imported.description, nextGeneralIssueSeq, imported.isNew),
+        );
         nextGeneralIssueSeq += 1;
       });
 
@@ -537,8 +748,12 @@ function reducer(state, action) {
             rooms[existingIndex].items,
             rooms[existingIndex].nextItemIssueSeq,
           );
-          const importedItems = room.items.map((description) => {
-            const item = makeItem(description, nextRoomIssueSeq);
+          const importedItems = room.items.map((imported) => {
+            const item = makeItem(
+              imported.description,
+              nextRoomIssueSeq,
+              imported.isNew,
+            );
             nextRoomIssueSeq += 1;
             return item;
           });
@@ -551,8 +766,12 @@ function reducer(state, action) {
         }
 
         let nextRoomIssueSeq = 1;
-        const importedItems = room.items.map((description) => {
-          const item = makeItem(description, nextRoomIssueSeq);
+        const importedItems = room.items.map((imported) => {
+          const item = makeItem(
+            imported.description,
+            nextRoomIssueSeq,
+            imported.isNew,
+          );
           nextRoomIssueSeq += 1;
           return item;
         });
@@ -574,6 +793,9 @@ function reducer(state, action) {
       };
     }
 
+    case "mergeNotes":
+      return mergeImportedNotes(state, action.payload).data;
+
     case "addRoomItem":
       return {
         ...state,
@@ -588,7 +810,7 @@ function reducer(state, action) {
                 return {
                   ...room,
                   nextItemIssueSeq: nextIssueSeq + 1,
-                  items: [...room.items, makeItem("", nextIssueSeq)],
+                  items: [...room.items, makeItem("", nextIssueSeq, true)],
                 };
               })(),
         ),
@@ -634,7 +856,14 @@ function reducer(state, action) {
       };
 
     case "clearAll":
-      return makeBlankProjectData();
+      return {
+        ...makeBlankProjectData(),
+        project: state.project,
+        projectNum: state.projectNum,
+        title: state.title,
+        date: state.date,
+        firm: state.firm,
+      };
 
     default:
       return state;
@@ -713,6 +942,7 @@ export default function PunchListApp() {
   const [saveStatus, setSaveStatus] = useReducer((_, value) => value, "");
   const saveTimer = useRef(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [importMode, setImportMode] = useState("merge");
   const [importText, setImportText] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [promptCopyStatus, setPromptCopyStatus] = useState("");
@@ -907,15 +1137,20 @@ export default function PunchListApp() {
   const handleImportSubmit = useCallback(() => {
     try {
       const parsed = parseImportText(importText);
-      dispatch({ type: "importNotes", payload: parsed });
-      setImportStatus(summarizeImport(parsed));
+      if (importMode === "merge") {
+        dispatch({ type: "mergeNotes", payload: parsed });
+        setImportStatus(summarizeMerge(parsed, data));
+      } else {
+        dispatch({ type: "importNotes", payload: parsed });
+        setImportStatus(summarizeImport(parsed));
+      }
       setImportText("");
     } catch (error) {
       setImportStatus(
         error instanceof Error ? error.message : "Import failed.",
       );
     }
-  }, [importText]);
+  }, [data, importMode, importText]);
 
   const handleImportPaste = useCallback(
     (event) => {
@@ -1042,6 +1277,9 @@ export default function PunchListApp() {
         item.issueSeq,
       ),
       description: item.description,
+      isNew: Boolean(item.isNew),
+      isRevised: containsInlineTag(item.description, "b"),
+      isCompleted: containsInlineTag(item.description, "s"),
     })),
     ...data.rooms.flatMap((room) =>
       room.items.map((item) => ({
@@ -1049,9 +1287,13 @@ export default function PunchListApp() {
         location: room.name,
         issueCode: formatIssueCode("room", room.name, item.issueSeq),
         description: item.description,
+        isNew: Boolean(item.isNew),
+        isRevised: containsInlineTag(item.description, "b"),
+        isCompleted: containsInlineTag(item.description, "s"),
       })),
     ),
   ];
+  const summaryStats = summarizeEntries(summaryEntries);
   const summaryPages = layout.showSummary
     ? paginateSummary(summaryEntries)
     : [];
@@ -1169,6 +1411,10 @@ export default function PunchListApp() {
       projectId={activeIdRef.current}
       item={item}
       issueCode={getSectionIssueCode(section, item)}
+      issueCodeStyle={getIssueCodeStyle({
+        isNew: Boolean(item.isNew),
+        isCompleted: containsInlineTag(item.description, "s"),
+      })}
       density={layout.density}
       showPhotos={layout.showPhotos}
       onDescChange={(value) =>
@@ -1219,6 +1465,18 @@ export default function PunchListApp() {
       />
     </div>
   );
+
+  const renderSummaryCount = () =>
+    [
+      `${summaryStats.total} total`,
+      `${summaryStats.new} new`,
+      `${summaryStats.revised} revised`,
+      `${summaryStats.completed} completed`,
+    ].map((label) => (
+      <span key={label} className="summary-stat">
+        {label}
+      </span>
+    ));
 
   const renderActionCell = (section, key) => {
     const isLast = lastSectionChunk[section.sectionId] === section;
@@ -1494,10 +1752,7 @@ export default function PunchListApp() {
         <div className="summary-page-body">
           <div className="summary-header-row">
             <div className="section-label">Summary</div>
-            <div className="summary-count">
-              {summaryEntries.length} item
-              {summaryEntries.length === 1 ? "" : "s"}
-            </div>
+            <div className="summary-count">{renderSummaryCount()}</div>
           </div>
 
           <div className="summary-table-head">
@@ -1517,7 +1772,13 @@ export default function PunchListApp() {
                 >
                   {entry.location}
                 </div>
-                <div className="summary-cell summary-cell--id">
+                <div
+                  className="summary-cell summary-cell--id"
+                  style={getIssueCodeStyle({
+                    isNew: entry.isNew,
+                    isCompleted: entry.isCompleted,
+                  })}
+                >
                   {entry.issueCode}
                 </div>
                 {renderSummaryDescriptionCell(entry)}
@@ -1541,6 +1802,8 @@ export default function PunchListApp() {
     const contentSegs = segments.filter(
       (seg) => seg.type !== "header" && seg.type !== "siteConditions",
     );
+    const showInlineSummaryCount =
+      summaryPages.length === 0 && pageIdx === 0 && contentSegs.length > 0;
 
     return (
       <div key={`detail-${pageIdx}`} className={pageClassName}>
@@ -1554,6 +1817,11 @@ export default function PunchListApp() {
         )}
 
         <div className="page-content">
+          {showInlineSummaryCount && (
+            <div className="summary-header-row summary-header-row--detail">
+              <div className="summary-count">{renderSummaryCount()}</div>
+            </div>
+          )}
           <div
             className="page-content-body"
             style={{
@@ -1742,6 +2010,37 @@ export default function PunchListApp() {
             </p>
 
             <div className="import-divider" />
+
+            <p className="import-section-heading">Import mode</p>
+            <div className="import-mode-toggle" role="group" aria-label="Import mode">
+              <button
+                type="button"
+                className={`import-mode-btn${importMode === "merge" ? " active" : ""}`}
+                aria-pressed={importMode === "merge"}
+                onClick={() => {
+                  setImportMode("merge");
+                  setImportStatus("");
+                }}
+              >
+                Merge
+              </button>
+              <button
+                type="button"
+                className={`import-mode-btn${importMode === "append" ? " active" : ""}`}
+                aria-pressed={importMode === "append"}
+                onClick={() => {
+                  setImportMode("append");
+                  setImportStatus("");
+                }}
+              >
+                Append
+              </button>
+            </div>
+            <p className="import-helper import-helper--muted import-mode-helper">
+              {importMode === "merge"
+                ? "Items with matching codes are updated. Photos are preserved. New items are added."
+                : "All items are added as new entries."}
+            </p>
 
             <p className="import-section-heading">Paste your notes</p>
             <textarea

@@ -2,7 +2,14 @@ const BULLET_RE = /^(\s*)(?:[-*+]|(?:\d+)[.)])\s+(.+?)\s*$/;
 const COLON_HEADING_RE = /^[A-Za-z0-9].*:\s*$/;
 const GENERAL_NOTES_KEYS = new Set(["general notes", "general note", "general"]);
 const SITE_CONDITION_KEYS = new Set(["site conditions", "site condition"]);
-const ISSUE_CODE_PREFIX_RE = /^(?:[A-Z]{2,4}|\d{2,4})-\d{2,}\s*:\s*/i;
+const STRUCK_UNDERLINED_ISSUE_CODE_CAPTURE_RE =
+  /^((?:~~|\*\*|\*)*)~~__((?:[A-Z]{2,4}|\d{2,4})-(\d+))__~~\s*:\s*/i;
+const UNDERLINED_ISSUE_CODE_CAPTURE_RE =
+  /^((?:~~|\*\*|\*)*)__((?:[A-Z]{2,4}|\d{2,4})-(\d+))__\s*:\s*/i;
+const STRUCK_ISSUE_CODE_CAPTURE_RE =
+  /^((?:~~|\*\*|__|\*)*)~~((?:[A-Z]{2,4}|\d{2,4})-(\d+))~~\s*:\s*/i;
+const ISSUE_CODE_CAPTURE_RE =
+  /^((?:~~|\*\*|__|\*)*)((?:[A-Z]{2,4}|\d{2,4})-(\d+))\s*:\s*/i;
 
 function normalizeIndent(line) {
   return line.replace(/\t/g, "    ");
@@ -48,20 +55,89 @@ function convertInlineMarkdownToHtml(text) {
   return result;
 }
 
+function normalizeIssueCode(rawCode, rawSeq) {
+  const prefix = rawCode.replace(/-\d+$/, "").toUpperCase();
+  const numericSeq = Number.parseInt(rawSeq, 10);
+  const sequence = Number.isFinite(numericSeq)
+    ? String(numericSeq).padStart(2, "0")
+    : rawSeq.trim().padStart(2, "0");
+  return `${prefix}-${sequence}`;
+}
+
+function parseItemWithCode(rawText) {
+  const trimmed = rawText.trim();
+  const struckUnderlinedMatch = trimmed.match(
+    STRUCK_UNDERLINED_ISSUE_CODE_CAPTURE_RE,
+  );
+  if (struckUnderlinedMatch) {
+    return {
+      issueCode: normalizeIssueCode(
+        struckUnderlinedMatch[2],
+        struckUnderlinedMatch[3],
+      ),
+      isNew: true,
+      description: convertInlineMarkdownToHtml(
+        `${struckUnderlinedMatch[1]}${trimmed.slice(struckUnderlinedMatch[0].length)}`.trim(),
+      ),
+    };
+  }
+
+  const underlinedMatch = trimmed.match(UNDERLINED_ISSUE_CODE_CAPTURE_RE);
+  if (underlinedMatch) {
+    return {
+      issueCode: normalizeIssueCode(underlinedMatch[2], underlinedMatch[3]),
+      isNew: true,
+      description: convertInlineMarkdownToHtml(
+        `${underlinedMatch[1]}${trimmed.slice(underlinedMatch[0].length)}`.trim(),
+      ),
+    };
+  }
+
+  const struckMatch = trimmed.match(STRUCK_ISSUE_CODE_CAPTURE_RE);
+  if (struckMatch) {
+    return {
+      issueCode: normalizeIssueCode(struckMatch[2], struckMatch[3]),
+      isNew: false,
+      description: convertInlineMarkdownToHtml(
+        `${struckMatch[1]}${trimmed.slice(struckMatch[0].length)}`.trim(),
+      ),
+    };
+  }
+
+  const match = trimmed.match(ISSUE_CODE_CAPTURE_RE);
+  const issueCode = match ? normalizeIssueCode(match[2], match[3]) : null;
+  const isNew = issueCode === null;
+  const descriptionText = match
+    ? `${match[1]}${trimmed.slice(match[0].length)}`.trim()
+    : trimmed;
+
+  return {
+    issueCode,
+    isNew,
+    description: convertInlineMarkdownToHtml(descriptionText),
+  };
+}
+
 function finalizeSections(sections) {
   const siteConditions = [];
   const generalNotes = [];
   const rooms = [];
 
   sections.forEach((section) => {
-    const cleanedItems = section.items
-      .map((item) => convertInlineMarkdownToHtml(item.replace(ISSUE_CODE_PREFIX_RE, "").trim()))
-      .filter(Boolean);
-    if (cleanedItems.length === 0) return;
     if (section.type === "siteConditions") {
+      const cleanedItems = section.items
+        .map((item) => convertInlineMarkdownToHtml(item.trim()))
+        .filter(Boolean);
+      if (cleanedItems.length === 0) return;
       siteConditions.push(...cleanedItems);
       return;
     }
+
+    const cleanedItems = section.items
+      .map(parseItemWithCode)
+      .filter((item) => item.description);
+    if (cleanedItems.length === 0) return;
+
     if (section.type === "generalNotes") {
       generalNotes.push(...cleanedItems);
       return;

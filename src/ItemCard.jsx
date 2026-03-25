@@ -5,6 +5,7 @@ export default function ItemCard({
   projectId,
   item,
   issueCode,
+  issueCodeStyle,
   density,
   showPhotos,
   onDescChange,
@@ -23,7 +24,9 @@ export default function ItemCard({
   return (
     <div className={cardClass}>
       <div className="item-text">
-        <div className="item-num">{issueCode}</div>
+        <div className="item-num" style={issueCodeStyle}>
+          {issueCode}
+        </div>
         <div className="item-label">Description:</div>
         <RichText
           className="item-desc-edit"
