@@ -217,6 +217,8 @@ function mergeImportedNotes(state, payload) {
   );
   let updatedCount = 0;
   let newCount = 0;
+  let removedCount = 0;
+  const touchedGeneralIndices = new Set();
 
   payload.generalNotes.forEach((imported) => {
     const existingIndex =
@@ -225,6 +227,7 @@ function mergeImportedNotes(state, payload) {
         : undefined;
 
     if (existingIndex !== undefined) {
+      touchedGeneralIndices.add(existingIndex);
       nextGeneralNotes[existingIndex] = {
         ...nextGeneralNotes[existingIndex],
         description: imported.description,
@@ -234,12 +237,22 @@ function mergeImportedNotes(state, payload) {
       return;
     }
 
+    touchedGeneralIndices.add(nextGeneralNotes.length);
     nextGeneralNotes.push(
       makeItem(imported.description, nextGeneralIssueSeq, imported.isNew),
     );
     nextGeneralIssueSeq += 1;
     newCount += 1;
   });
+
+  // Remove general notes absent from the import
+  let finalGeneralNotes = nextGeneralNotes;
+  if (payload.generalNotes.length > 0) {
+    finalGeneralNotes = nextGeneralNotes.filter((_, i) =>
+      touchedGeneralIndices.has(i),
+    );
+    removedCount += nextGeneralNotes.length - finalGeneralNotes.length;
+  }
 
   payload.rooms.forEach((room) => {
     const key = normalizeRoomKey(room.name);
@@ -258,6 +271,8 @@ function mergeImportedNotes(state, payload) {
         existingRoom.nextItemIssueSeq,
       );
 
+      const touchedRoomIndices = new Set();
+
       room.items.forEach((imported) => {
         const matchedIndex =
           imported.issueCode && roomItemIndexByCode.has(imported.issueCode)
@@ -265,6 +280,7 @@ function mergeImportedNotes(state, payload) {
             : undefined;
 
         if (matchedIndex !== undefined) {
+          touchedRoomIndices.add(matchedIndex);
           nextItems[matchedIndex] = {
             ...nextItems[matchedIndex],
             description: imported.description,
@@ -274,6 +290,7 @@ function mergeImportedNotes(state, payload) {
           return;
         }
 
+        touchedRoomIndices.add(nextItems.length);
         nextItems.push(
           makeItem(imported.description, nextRoomIssueSeq, imported.isNew),
         );
@@ -281,10 +298,16 @@ function mergeImportedNotes(state, payload) {
         newCount += 1;
       });
 
+      // Remove room items absent from the import
+      const filteredItems = nextItems.filter((_, i) =>
+        touchedRoomIndices.has(i),
+      );
+      removedCount += nextItems.length - filteredItems.length;
+
       rooms[existingIndex] = {
         ...existingRoom,
         nextItemIssueSeq: nextRoomIssueSeq,
-        items: nextItems,
+        items: filteredItems,
       };
       return;
     }
@@ -314,12 +337,13 @@ function mergeImportedNotes(state, payload) {
       ...state,
       nextGeneralIssueSeq,
       siteConditions: [...payload.siteConditions],
-      generalNotes: nextGeneralNotes,
+      generalNotes: finalGeneralNotes,
       rooms,
     },
     counts: {
       updatedCount,
       newCount,
+      removedCount,
       affectedRoomCount: payload.rooms.length,
       replacedSiteConditions:
         payload.siteConditions.length > 0 || state.siteConditions.length > 0,
@@ -329,7 +353,8 @@ function mergeImportedNotes(state, payload) {
 
 function summarizeMerge(parsed, state) {
   const { counts } = mergeImportedNotes(state, parsed);
-  const totalTouched = counts.updatedCount + counts.newCount;
+  const totalTouched =
+    counts.updatedCount + counts.newCount + counts.removedCount;
 
   if (totalTouched === 0) {
     return counts.replacedSiteConditions
@@ -344,8 +369,12 @@ function summarizeMerge(parsed, state) {
   const siteConditionsPart = counts.replacedSiteConditions
     ? " Site conditions replaced."
     : "";
+  const removedPart =
+    counts.removedCount > 0
+      ? `, ${counts.removedCount} removed`
+      : "";
 
-  return `Merged: ${counts.updatedCount} updated, ${counts.newCount} new item${counts.newCount === 1 ? "" : "s"}${roomPart}.${siteConditionsPart}`;
+  return `Merged: ${counts.updatedCount} updated, ${counts.newCount} new item${counts.newCount === 1 ? "" : "s"}${removedPart}${roomPart}.${siteConditionsPart}`;
 }
 
 function makeBlankProjectData() {
@@ -1468,7 +1497,7 @@ export default function PunchListApp() {
 
   const renderSummaryCount = () =>
     [
-      `${summaryStats.total} total`,
+      `${summaryStats.total - summaryStats.completed} open`,
       `${summaryStats.new} new`,
       `${summaryStats.revised} revised`,
       `${summaryStats.completed} completed`,
@@ -1752,7 +1781,9 @@ export default function PunchListApp() {
         <div className="summary-page-body">
           <div className="summary-header-row">
             <div className="section-label">Summary</div>
-            <div className="summary-count">{renderSummaryCount()}</div>
+            {layout.showCount && (
+              <div className="summary-count">{renderSummaryCount()}</div>
+            )}
           </div>
 
           <div className="summary-table-head">
@@ -1817,7 +1848,7 @@ export default function PunchListApp() {
         )}
 
         <div className="page-content">
-          {showInlineSummaryCount && (
+          {showInlineSummaryCount && layout.showCount && (
             <div className="summary-header-row summary-header-row--detail">
               <div className="summary-count">{renderSummaryCount()}</div>
             </div>

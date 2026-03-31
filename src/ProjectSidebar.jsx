@@ -124,6 +124,16 @@ export default function ProjectSidebar({
             />
             <span>Include summary page</span>
           </label>
+          <label className="sidebar-toggle-row">
+            <input
+              type="checkbox"
+              checked={layout.showCount}
+              onChange={(event) =>
+                onLayoutChange({ showCount: event.target.checked })
+              }
+            />
+            <span>Show item count</span>
+          </label>
         </div>
 
         <div className="sidebar-section">

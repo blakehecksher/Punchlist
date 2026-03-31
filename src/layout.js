@@ -4,6 +4,7 @@ export const DEFAULT_LAYOUT = {
   density: "2x2",
   showPhotos: true,
   showSummary: true,
+  showCount: true,
 };
 
 const COLUMN_MAP = {
@@ -39,6 +40,10 @@ export function normalizeLayout(layout) {
       typeof layout?.showSummary === "boolean"
         ? layout.showSummary
         : DEFAULT_LAYOUT.showSummary,
+    showCount:
+      typeof layout?.showCount === "boolean"
+        ? layout.showCount
+        : DEFAULT_LAYOUT.showCount,
   };
 }
 
