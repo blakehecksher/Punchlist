@@ -155,8 +155,8 @@ function finalizeSections(sections) {
 function flattenOutlineNode(node) {
   const children = node.children.map(flattenOutlineNode).filter(Boolean);
   if (children.length === 0) return node.content;
-  if (!node.content) return children.join("; ");
-  return `${node.content}: ${children.join("; ")}`;
+  if (!node.content) return children.join(" • ");
+  return `${node.content} • ${children.join(" • ")}`;
 }
 
 function parseOutlineSections(text) {
