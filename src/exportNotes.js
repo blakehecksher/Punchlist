@@ -160,7 +160,7 @@ export function buildExportHtml(data) {
     );
   });
 
-  return `<ul>${sections.join("")}</ul>`;
+  return `<!DOCTYPE html><html><body><ul>${sections.join("")}</ul></body></html>`;
 }
 
 function copyWithExecCommand(text) {
