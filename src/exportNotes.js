@@ -10,7 +10,7 @@ function htmlToMarkdown(html) {
     .replace(/<u>(.*?)<\/u>/gi, "__$1__")
     .replace(/<s>(.*?)<\/s>/gi, "~~$1~~")
     .replace(/<(?:del|strike|x)>(.*?)<\/(?:del|strike|x)>/gi, "~~$1~~")
-    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, "");
 }
 
@@ -51,13 +51,32 @@ function formatIssueCodeHtml(issueCode, isNew, isCompleted) {
 }
 
 function formatItemLine(issueCode, description, isNew = false, isCompleted = false) {
-  return `    - ${formatIssueCodeMarkdown(issueCode, isNew, isCompleted)}: ${htmlToMarkdown((description || "").trim())}`;
+  const md = htmlToMarkdown((description || "").trim());
+  const lines = md.split("\n").filter((l) => l.trim());
+  const prefix = `    - ${formatIssueCodeMarkdown(issueCode, isNew, isCompleted)}: `;
+  if (lines.length <= 1) return `${prefix}${lines[0] || ""}`;
+  return [
+    `${prefix}${lines[0]}`,
+    ...lines.slice(1).map((l) => `        ${l}`),
+  ].join("\n");
 }
 
 function formatItemHtml(issueCode, description, isNew = false, isCompleted = false) {
-  const formattedDescription = (description || "").trim();
-  const separator = formattedDescription ? ": " : ":";
-  return `<li>${formatIssueCodeHtml(issueCode, isNew, isCompleted)}${separator}${formattedDescription}</li>`;
+  const raw = (description || "").trim();
+  const parts = raw.split(/<br\s*\/?>/i);
+  const firstLine = parts[0] || "";
+  const separator = firstLine ? ": " : ":";
+  const header = `${formatIssueCodeHtml(issueCode, isNew, isCompleted)}${separator}${firstLine}`;
+
+  if (parts.length <= 1) return `<li>${header}</li>`;
+
+  const subItems = parts
+    .slice(1)
+    .map((p) => p.replace(/^\s*-\s*/, "").trim())
+    .filter(Boolean)
+    .map((p) => `<li>${p}</li>`)
+    .join("");
+  return `<li>${header}<ul>${subItems}</ul></li>`;
 }
 
 export function buildExportMarkdown(data) {

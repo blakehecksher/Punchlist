@@ -96,6 +96,8 @@ function nodeToMarkdownText(node) {
   if (isListNode(node) || isWordListIgnoreNode(node)) return "";
 
   const tag = node.tagName;
+  if (tag === "BR") return "\n";
+
   let inner = "";
   for (const child of node.childNodes) {
     inner += nodeToMarkdownText(child);

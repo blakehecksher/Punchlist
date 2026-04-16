@@ -155,8 +155,8 @@ function finalizeSections(sections) {
 function flattenOutlineNode(node) {
   const children = node.children.map(flattenOutlineNode).filter(Boolean);
   if (children.length === 0) return node.content;
-  if (!node.content) return children.join("; ");
-  return `${node.content}: ${children.join("; ")}`;
+  if (!node.content) return children.join("<br>- ");
+  return `${node.content}<br>- ${children.join("<br>- ")}`;
 }
 
 function parseOutlineSections(text) {
@@ -226,7 +226,7 @@ function parseHeadingSections(text) {
     }
 
     if (current.items.length > 0) {
-      current.items[current.items.length - 1] = `${current.items[current.items.length - 1]} ${line}`.trim();
+      current.items[current.items.length - 1] = `${current.items[current.items.length - 1]}<br>${line}`.trim();
       continue;
     }
 

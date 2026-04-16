@@ -1174,6 +1174,7 @@ export default function PunchListApp() {
         setImportStatus(summarizeImport(parsed));
       }
       setImportText("");
+      setImportOpen(false);
     } catch (error) {
       setImportStatus(
         error instanceof Error ? error.message : "Import failed.",
