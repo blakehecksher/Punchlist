@@ -1,6 +1,10 @@
 const BULLET_RE = /^(\s*)(?:[-*+]|(?:\d+)[.)])\s+(.+?)\s*$/;
 const COLON_HEADING_RE = /^[A-Za-z0-9].*:\s*$/;
-const GENERAL_NOTES_KEYS = new Set(["general notes", "general note", "general"]);
+const GENERAL_NOTES_KEYS = new Set([
+  "general notes",
+  "general note",
+  "general",
+]);
 const SITE_CONDITION_KEYS = new Set(["site conditions", "site condition"]);
 const STRUCK_UNDERLINED_ISSUE_CODE_CAPTURE_RE =
   /^((?:~~|\*\*|\*)*)~~__((?:[A-Z]{2,4}|\d{2,4})-(\d+))__~~\s*:\s*/i;
@@ -46,7 +50,8 @@ function ensureSection(sections, rawName) {
 }
 
 function convertInlineMarkdownToHtml(text) {
-  if (!text.includes("*") && !text.includes("_") && !text.includes("~")) return text;
+  if (!text.includes("*") && !text.includes("_") && !text.includes("~"))
+    return text;
   let result = text;
   result = result.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
   result = result.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
@@ -145,8 +150,14 @@ function finalizeSections(sections) {
     rooms.push({ name: section.name, items: cleanedItems });
   });
 
-  if (siteConditions.length === 0 && generalNotes.length === 0 && rooms.length === 0) {
-    throw new Error("No importable notes found. Use Site Conditions, General Notes, or room headings with bullet items underneath.");
+  if (
+    siteConditions.length === 0 &&
+    generalNotes.length === 0 &&
+    rooms.length === 0
+  ) {
+    throw new Error(
+      "No importable notes found. Use Site Conditions, General Notes, or room headings with bullet items underneath.",
+    );
   }
 
   return { siteConditions, generalNotes, rooms };
@@ -182,12 +193,15 @@ function parseOutlineSections(text) {
 
   tokens.forEach((token) => {
     const node = { content: token.content, children: [] };
-    while (stack.length > 1 && token.indent <= stack[stack.length - 1].indent) stack.pop();
+    while (stack.length > 1 && token.indent <= stack[stack.length - 1].indent)
+      stack.pop();
     stack[stack.length - 1].node.children.push(node);
     stack.push({ indent: token.indent, node });
   });
 
-  const topLevelSections = root.children.filter((node) => node.children.length > 0);
+  const topLevelSections = root.children.filter(
+    (node) => node.children.length > 0,
+  );
   if (topLevelSections.length === 0) return null;
 
   const sections = [];
@@ -226,7 +240,8 @@ function parseHeadingSections(text) {
     }
 
     if (current.items.length > 0) {
-      current.items[current.items.length - 1] = `${current.items[current.items.length - 1]}<br>${line}`.trim();
+      current.items[current.items.length - 1] =
+        `${current.items[current.items.length - 1]}<br>${line}`.trim();
       continue;
     }
 
@@ -238,7 +253,10 @@ function parseHeadingSections(text) {
 
 export function parseImportText(source) {
   const text = source.replace(/\r\n?/g, "\n").trim();
-  if (!text) throw new Error("Paste notes or load a .docx/.md/.txt file before importing.");
+  if (!text)
+    throw new Error(
+      "Paste notes or load a .docx/.md/.txt file before importing.",
+    );
 
   return parseOutlineSections(text) ?? parseHeadingSections(text);
 }
