@@ -1,0 +1,32 @@
+# Claude Code local settings
+.claude/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+dev.stdout.log
+dev.stderr.log
+
+#JSON Exports
+JSON Exports/

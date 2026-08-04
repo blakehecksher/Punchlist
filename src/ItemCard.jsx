@@ -1,0 +1,51 @@
+import PhotoCell from "./PhotoCell.jsx";
+import RichText from "./RichText.jsx";
+
+export default function ItemCard({
+  projectId,
+  item,
+  issueCode,
+  issueCodeStyle,
+  density,
+  onDescChange,
+  onPhoto,
+  onRemove,
+  onPositionChange,
+}) {
+  const cardClass = ["item-card", `item-card--${density}`].join(" ");
+
+  return (
+    <div className={cardClass}>
+      <div className="item-text">
+        <div className="item-num" style={issueCodeStyle}>
+          {issueCode}
+        </div>
+        <div className="item-label">Description:</div>
+        <RichText
+          className="item-desc-edit"
+          value={item.description}
+          onChange={(html) => onDescChange(html)}
+          placeholder="Click here to enter description"
+        />
+        <button
+          className="item-remove"
+          onClick={onRemove}
+          title="Remove item"
+          aria-label={`Remove item ${issueCode}`}
+        >
+          x
+        </button>
+      </div>
+      <PhotoCell
+        projectId={projectId}
+        itemId={item.id}
+        issueCode={issueCode}
+        photo={item.photo}
+        position={item.photoPosition}
+        onPhoto={onPhoto}
+        onRemove={() => onPhoto(null, null)}
+        onPositionChange={onPositionChange}
+      />
+    </div>
+  );
+}
