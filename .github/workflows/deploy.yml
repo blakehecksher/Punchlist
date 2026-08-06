@@ -46,5 +46,22 @@ jobs:
               if (error.status !== 404) throw error
               core.info(`Stale Pages deployment ${deployment} is already gone`)
             }
+      - name: Inspect Pages source
+        if: contains(github.event.head_commit.message, 'Inspect Pages source')
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const response = await github.request('GET /repos/{owner}/{repo}/pages', {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            })
+            core.info(JSON.stringify({
+              status: response.data.status,
+              build_type: response.data.build_type,
+              source: response.data.source,
+              html_url: response.data.html_url,
+            }))
       - uses: actions/deploy-pages@v4
         id: deployment
+        if: !contains(github.event.head_commit.message, 'Inspect Pages source')

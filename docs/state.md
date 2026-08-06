@@ -2,7 +2,7 @@
 _Last updated: 2026-08-06_
 
 ## Current focus
-Maintain the release-ready import-to-issued-PDF workflow with predictable numbering, formatting, correction history, and reliable GitHub Pages publishing from `master`; clear the stale Pages deployment queue.
+Maintain the release-ready import-to-issued-PDF workflow with predictable numbering, formatting, correction history, and reliable GitHub Pages publishing from `master`; verify the live Pages source setting.
 
 ## What's working
 - The local Vite/React app passes `npm.cmd run lint` and `npm.cmd run build`.
@@ -24,7 +24,8 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 
 ## In progress
 - Remaining release-readiness improvements: Print/PDF metadata preflight, destructive-action recovery, local-save/backup messaging, and a stronger existing-project import-success handoff.
-- One-time cleanup of the stale `613e211` Pages deployment is queued in the next `master` workflow run; remove the cleanup hook after that run succeeds.
+- One-time cleanup of the stale `613e211` Pages deployment succeeded, but the next Pages deployment still timed out after entering `deployment_in_progress`.
+- A one-time authenticated Pages-source diagnostic is queued in the next `master` workflow run; remove both temporary diagnostic hooks after verification.
 
 ## Known issues
 - The legacy `gh-pages` branch remains in the repository for deployment history but is no longer used by the GitHub Actions Pages source.
@@ -37,7 +38,7 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 - The rich outline editor relies on the browser's content-editing command support for formatting.
 
 ## Next actions
-1. Confirm the one-time stale-deployment cleanup and `master` Pages run complete, then remove the cleanup hook.
+1. Confirm the Pages source reports GitHub Actions/workflow, then remove the temporary cleanup and diagnostic hooks and rerun a normal `master` deployment.
 2. Add a short issue preflight for blank project metadata and optional issuance notes.
 3. Add undo/recovery for removed rooms and items, plus review before re-import removes missing items.
 
@@ -55,6 +56,7 @@ git -c safe.directory='G:/Files/Github/Punchlist' status --short --branch
 ```
 
 ## Recent logs
+- docs/log/2026-08-06 1010 Inspect GitHub Pages source.md - added a one-time authenticated source inspection after the cleaned deployment still timed out.
 - docs/log/2026-08-06 0957 Fix Pages cleanup request.md - replaced the unavailable Octokit Pages-cancel helper with a raw authenticated API request.
 - docs/log/2026-08-06 0955 Clear stale GitHub Pages deployment.md - added a one-time Pages API cleanup for the stale deployment that kept native master runs queued.
 - docs/log/2026-08-06 0942 Restore master GitHub Pages deployment.md - restored native GitHub Actions Pages publishing from master after the main/gh-pages mismatch.
