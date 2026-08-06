@@ -62,6 +62,21 @@ jobs:
               source: response.data.source,
               html_url: response.data.html_url,
             }))
+      - name: Repair Pages site metadata
+        if: ${{ contains(github.event.head_commit.message, 'Repair Pages site') }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const response = await github.request('PUT /repos/{owner}/{repo}/pages', {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              data: {
+                build_type: 'workflow',
+                source: { branch: 'master', path: '/' },
+              },
+            })
+            core.info(`Pages site metadata reset: HTTP ${response.status}`)
       - uses: actions/deploy-pages@v4
         id: deployment
-        if: ${{ !contains(github.event.head_commit.message, 'Inspect Pages source') }}
+        if: ${{ !contains(github.event.head_commit.message, 'Inspect Pages source') && !contains(github.event.head_commit.message, 'Repair Pages site') }}
