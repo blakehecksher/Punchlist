@@ -20,6 +20,7 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 - Document Settings includes `Show issuances`; turning it off keeps `End of Punch List` but hides its dated history. Existing projects default to showing the history.
 - The screen-only Issuances workspace remains at the bottom with a toolbar jump action, lock/correction controls, editable titles, dates, counts, and Reprint.
 - Sidebar and Import Notes states keep the Issuances workspace aligned with the document.
+- GitHub Pages publishes the production build from `main` at `https://blakehecksher.github.io/Punchlist/`.
 
 ## In progress
 - Remaining release-readiness improvements: Print/PDF metadata preflight, destructive-action recovery, local-save/backup messaging, and a stronger existing-project import-success handoff.
@@ -36,7 +37,7 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 ## Next actions
 1. Add a short issue preflight for blank project metadata and optional issuance notes.
 2. Add undo/recovery for removed rooms and items, plus review before re-import removes missing items.
-3. Enable and verify GitHub Pages deployment.
+3. Add a short in-app reminder that work is saved only in this browser unless a backup is downloaded.
 
 ## How to verify
 ```text
@@ -52,6 +53,7 @@ git -c safe.directory='G:/Files/Github/Punchlist' status --short --branch
 ```
 
 ## Recent logs
+- docs/log/2026-08-06 0907 Publish main to GitHub Pages.md - moved the release branch to main and configured the verified production build for GitHub Pages.
 - docs/log/2026-08-06 0836 Optional issuance history and ending flow.md - added the Show issuances setting and made the document ending occupy the next available row.
 - docs/log/2026-08-06 0052 Parser semantics and document ending.md - added GEN/EXT aliases, baseline new-item logic, safe multi-line formatting, formatted-heading parsing, and the left-aligned multi-column issuance ending.
 - docs/log/2026-08-06 0017 Issuance document ending and importer fixes.md - fixed four-card pagination, document-end issuance history, editable labels, importer formatting edge cases, and panel alignment.
