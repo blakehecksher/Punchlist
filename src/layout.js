@@ -2,6 +2,7 @@ export const DEFAULT_LAYOUT = {
   density: "2x2",
   showSummary: true,
   showCount: true,
+  showIssuances: true,
 };
 
 export function normalizeLayout(layout) {
@@ -17,6 +18,10 @@ export function normalizeLayout(layout) {
       typeof layout?.showCount === "boolean"
         ? layout.showCount
         : DEFAULT_LAYOUT.showCount,
+    showIssuances:
+      typeof layout?.showIssuances === "boolean"
+        ? layout.showIssuances
+        : DEFAULT_LAYOUT.showIssuances,
   };
 }
 

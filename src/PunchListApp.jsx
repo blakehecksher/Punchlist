@@ -2360,30 +2360,32 @@ export default function PunchListApp() {
       <div className="document-issuance-end" key={key}>
         <div className="document-issuance-rule" />
         <div className="document-issuance-title">End of Punch List</div>
-        <div className="document-issuance-lines">
-          {issuanceColumns.length > 0 ? (
-            issuanceColumns.map((records, columnIndex) => (
-              <div
-                className="document-issuance-column"
-                key={`issuance-column-${columnIndex}`}
-              >
-                {records.map((record) => {
-                  const title = getIssuanceTitle(record).trim();
-                  return (
-                    <div className="document-issuance-line" key={record.id}>
-                      {title ? `${title} issued` : "Issued"}{" "}
-                      {getCurrentDateLabel(new Date(record.issuedAt))}
-                    </div>
-                  );
-                })}
+        {layout.showIssuances && (
+          <div className="document-issuance-lines">
+            {issuanceColumns.length > 0 ? (
+              issuanceColumns.map((records, columnIndex) => (
+                <div
+                  className="document-issuance-column"
+                  key={`issuance-column-${columnIndex}`}
+                >
+                  {records.map((record) => {
+                    const title = getIssuanceTitle(record).trim();
+                    return (
+                      <div className="document-issuance-line" key={record.id}>
+                        {title ? `${title} issued` : "Issued"}{" "}
+                        {getCurrentDateLabel(new Date(record.issuedAt))}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
+            ) : (
+              <div className="document-issuance-line document-issuance-line--draft">
+                Working draft · Print PDF &amp; issue to add the issued date.
               </div>
-            ))
-          ) : (
-            <div className="document-issuance-line document-issuance-line--draft">
-              Working draft · Print PDF &amp; issue to add the issued date.
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };

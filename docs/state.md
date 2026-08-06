@@ -16,6 +16,8 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 - `Print PDF & issue` creates a dated immutable snapshot, stores its document and photos, locks the project, and opens Print/PDF.
 - Unlock to correct opens an editable Correction draft; correction and punch-list titles are prefilled, editable, and may be blank.
 - The final printed page contains a top-left `End of Punch List` record with a full-width rule and indented issuance lines. Ten records fill the first column before a second column begins.
+- The ending consumes the next available full-width document row instead of pinning itself to the bottom of the page.
+- Document Settings includes `Show issuances`; turning it off keeps `End of Punch List` but hides its dated history. Existing projects default to showing the history.
 - The screen-only Issuances workspace remains at the bottom with a toolbar jump action, lock/correction controls, editable titles, dates, counts, and Reprint.
 - Sidebar and Import Notes states keep the Issuances workspace aligned with the document.
 
@@ -45,10 +47,12 @@ Underline or bold the General/Exterior headings and confirm they remain section 
 Select text across two or more item lines and apply Bold/Underline/Strike; confirm the outline still imports as separate items.
 Re-import an older GN/000/RM-numbered outline and confirm existing items update rather than duplicate.
 Open the final page and confirm the End of Punch List record is top-left with a full-width rule and indented entries.
+Turn off Show issuances in Document Settings; confirm the ending title remains, dated lines disappear, and the screen-only Issuances workspace remains.
 git -c safe.directory='G:/Files/Github/Punchlist' status --short --branch
 ```
 
 ## Recent logs
+- docs/log/2026-08-06 0836 Optional issuance history and ending flow.md - added the Show issuances setting and made the document ending occupy the next available row.
 - docs/log/2026-08-06 0052 Parser semantics and document ending.md - added GEN/EXT aliases, baseline new-item logic, safe multi-line formatting, formatted-heading parsing, and the left-aligned multi-column issuance ending.
 - docs/log/2026-08-06 0017 Issuance document ending and importer fixes.md - fixed four-card pagination, document-end issuance history, editable labels, importer formatting edge cases, and panel alignment.
 - docs/log/2026-08-05 2332 Immutable issues and rich notes.md - implemented lock/correct/reissue history, true WYSIWYG outline formatting, and snapshot-aware backups.

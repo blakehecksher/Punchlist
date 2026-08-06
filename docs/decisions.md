@@ -57,3 +57,5 @@ One entry per decision. Format: **what**, why, date. Exists to prevent re-litiga
 **New markers describe change since the prior issuance, not presence in the first import** - a clean first punch list is the baseline, so its automatically numbered items are not underlined. Opening a correction or the next issuance clears the previous new markers; items added after that point may be marked new. 2026-08-06
 
 **Rich formatting may span several outline items** - the editor no longer enforces one-item selections. Formatting is serialized as balanced markup on each line, and formatting around a bullet or section heading is normalized before structural parsing so visual styling cannot corrupt the room/item hierarchy. 2026-08-06
+
+**The document ending flows as one normal row and its history is optional** - `End of Punch List` consumes the next available full-width row instead of pinning itself to the page bottom. Document Settings may hide the dated issuance lines, but the ending title and the screen-only issuance workflow remain available. Older saved projects show the history by default. 2026-08-06

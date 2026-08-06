@@ -669,7 +669,6 @@ body {
   justify-content: flex-start;
   flex-direction: column;
   gap: 0;
-  margin-top: auto;
   padding: 18px 20px;
   border: 1px solid #d6d2cc;
   background: #fbfbf9;

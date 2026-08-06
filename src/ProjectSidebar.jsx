@@ -203,6 +203,17 @@ export default function ProjectSidebar({
                 />
                 <span>Show item count</span>
               </label>
+              <label className="sidebar-toggle-row">
+                <input
+                  type="checkbox"
+                  checked={layout.showIssuances}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    onLayoutChange({ showIssuances: event.target.checked })
+                  }
+                />
+                <span>Show issuances</span>
+              </label>
             </div>
           </details>
 

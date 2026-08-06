@@ -8,7 +8,7 @@
 - Source pixels: 1008 x 393.
 - Implementation pixels and CSS viewport: 1265 x 712 at device density 1.
 - Normalization: both captures were proportionally fit to 900-pixel comparison panels without cropping.
-- State: final detail page with one saved Punch List issuance; screen-only editing controls remain visible outside the print area.
+- State: final detail page with two saved issuance records; screen-only editing controls remain visible outside the print area.
 
 ## Findings
 - P0 blockers: 0.
@@ -28,6 +28,8 @@
 - A clean first import reports zero new items, while later-issuance imports can still mark new work.
 - Formatted General and Exterior headings parse as section names instead of becoming malformed rooms.
 - Multi-item formatting no longer rejects a selection containing line breaks, and serialized formatting is balanced per line so bullets remain parseable.
+- The `Show issuances` checkbox hides the dated print-history lines while preserving the `End of Punch List` title and the screen-only Issuances workspace.
+- The ending follows the last item row with no automatic top margin, so a new ending-only page starts in its first row rather than its second.
 - Browser console errors: none.
 - `npm.cmd run lint`: passed.
 - `npm.cmd run build`: passed.
@@ -36,6 +38,7 @@
 1. Initial P2: the issuance record was centered vertically and horizontally, with a short centered rule. This contradicted the annotated source's top-left placement and full-width line.
 2. Fix: changed the record to top-left alignment, extended the rule across the container, indented the issuance entries, and split history into columns of ten.
 3. Post-fix evidence: `docs/design/2026-08-06-end-comparison.png` shows the requested placement, width, and hierarchy with no remaining P0/P1/P2 mismatch.
+4. Follow-up comparison against the annotated blank-row screenshot confirmed the ending now occupies the next available row instead of being pushed to the page bottom.
 
 ## Implementation checklist
 - [x] Top-left document ending.
@@ -43,5 +46,7 @@
 - [x] Indented issuance entries.
 - [x] Two-column capacity for twenty issuances.
 - [x] Existing print geometry preserved.
+- [x] Optional dated issuance lines with persistent default-on behavior.
+- [x] Natural next-row placement without bottom pinning.
 
 final result: passed
