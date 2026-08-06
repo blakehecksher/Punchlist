@@ -2,7 +2,7 @@
 _Last updated: 2026-08-06_
 
 ## Current focus
-Maintain the release-ready import-to-issued-PDF workflow with predictable numbering, formatting, correction history, and reliable GitHub Pages publishing from `master`; verify the live Pages source setting.
+Maintain the release-ready import-to-issued-PDF workflow with predictable numbering, formatting, correction history, and reliable GitHub Pages publishing from `master`; confirm the repaired site with a normal deployment.
 
 ## What's working
 - The local Vite/React app passes `npm.cmd run lint` and `npm.cmd run build`.
@@ -24,9 +24,8 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 
 ## In progress
 - Remaining release-readiness improvements: Print/PDF metadata preflight, destructive-action recovery, local-save/backup messaging, and a stronger existing-project import-success handoff.
-- One-time cleanup of the stale `613e211` Pages deployment succeeded, but the next Pages deployment still timed out after entering `deployment_in_progress`.
-- The authenticated Pages-source diagnostic reports `build_type: workflow`, `source.branch: gh-pages`, and `status: errored`.
-- A one-time metadata repair is queued to keep workflow publishing enabled while resetting the saved source branch to `master`.
+- The stale `613e211` Pages deployment was canceled, and the authenticated Pages metadata was reset to `build_type: workflow` with `source.branch: master`.
+- Temporary cleanup, source-inspection, and metadata-repair hooks have been removed; a normal `master` deployment is pending.
 
 ## Known issues
 - The legacy `gh-pages` branch remains in the repository for deployment history but is no longer used by the GitHub Actions Pages source.
@@ -39,7 +38,7 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 - The rich outline editor relies on the browser's content-editing command support for formatting.
 
 ## Next actions
-1. Confirm the Pages metadata repair and a normal `master` deployment succeed, then remove all temporary cleanup/diagnostic hooks.
+1. Confirm the repaired Pages site completes a normal `master` deployment.
 2. Add a short issue preflight for blank project metadata and optional issuance notes.
 3. Add undo/recovery for removed rooms and items, plus review before re-import removes missing items.
 
@@ -57,6 +56,7 @@ git -c safe.directory='G:/Files/Github/Punchlist' status --short --branch
 ```
 
 ## Recent logs
+- docs/log/2026-08-06 1017 Reset Pages source and remove temporary hooks.md - reset Pages metadata to workflow/master and removed the one-time remediation hooks.
 - docs/log/2026-08-06 1013 Repair GitHub Pages metadata.md - added a one-time authenticated Pages metadata reset to workflow mode with master as the saved source branch.
 - docs/log/2026-08-06 1011 Fix Pages diagnostic condition.md - corrected the temporary diagnostic's GitHub Actions expression after the first diagnostic commit was rejected before job creation.
 - docs/log/2026-08-06 1010 Inspect GitHub Pages source.md - added a one-time authenticated source inspection after the cleaned deployment still timed out.
