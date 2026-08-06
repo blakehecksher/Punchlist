@@ -28,5 +28,23 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+      - name: Clear stale Pages deployment
+        if: contains(github.event.head_commit.message, 'Clear stale Pages deployment')
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const deployment = '613e211bd5bf628898a38635ce1dccf8b2205745'
+            try {
+              await github.rest.repos.cancelPagesDeployment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pages_deployment_id: deployment,
+              })
+              core.info(`Canceled stale Pages deployment ${deployment}`)
+            } catch (error) {
+              if (error.status !== 404) throw error
+              core.info(`Stale Pages deployment ${deployment} is already gone`)
+            }
       - uses: actions/deploy-pages@v4
         id: deployment

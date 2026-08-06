@@ -2,7 +2,7 @@
 _Last updated: 2026-08-06_
 
 ## Current focus
-Maintain the release-ready import-to-issued-PDF workflow with predictable numbering, formatting, correction history, and reliable GitHub Pages publishing from `master`.
+Maintain the release-ready import-to-issued-PDF workflow with predictable numbering, formatting, correction history, and reliable GitHub Pages publishing from `master`; clear the stale Pages deployment queue.
 
 ## What's working
 - The local Vite/React app passes `npm.cmd run lint` and `npm.cmd run build`.
@@ -24,6 +24,7 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 
 ## In progress
 - Remaining release-readiness improvements: Print/PDF metadata preflight, destructive-action recovery, local-save/backup messaging, and a stronger existing-project import-success handoff.
+- One-time cleanup of the stale `613e211` Pages deployment is queued in the next `master` workflow run; remove the cleanup hook after that run succeeds.
 
 ## Known issues
 - The legacy `gh-pages` branch remains in the repository for deployment history but is no longer used by the GitHub Actions Pages source.
@@ -36,7 +37,7 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 - The rich outline editor relies on the browser's content-editing command support for formatting.
 
 ## Next actions
-1. Confirm the first `master`-triggered GitHub Actions Pages run completes and the live URL updates.
+1. Confirm the one-time stale-deployment cleanup and `master` Pages run complete, then remove the cleanup hook.
 2. Add a short issue preflight for blank project metadata and optional issuance notes.
 3. Add undo/recovery for removed rooms and items, plus review before re-import removes missing items.
 
@@ -54,6 +55,7 @@ git -c safe.directory='G:/Files/Github/Punchlist' status --short --branch
 ```
 
 ## Recent logs
+- docs/log/2026-08-06 0955 Clear stale GitHub Pages deployment.md - added a one-time Pages API cleanup for the stale deployment that kept native master runs queued.
 - docs/log/2026-08-06 0942 Restore master GitHub Pages deployment.md - restored native GitHub Actions Pages publishing from master after the main/gh-pages mismatch.
 - docs/log/2026-08-06 0907 Publish main to GitHub Pages.md - moved the release branch to main and configured the verified production build for GitHub Pages.
 - docs/log/2026-08-06 0836 Optional issuance history and ending flow.md - added the Show issuances setting and made the document ending occupy the next available row.
