@@ -56,6 +56,7 @@ git -c safe.directory='G:/Files/Github/Punchlist' status --short --branch
 ```
 
 ## Recent logs
+- docs/log/2026-08-06 1011 Fix Pages diagnostic condition.md - corrected the temporary diagnostic's GitHub Actions expression after the first diagnostic commit was rejected before job creation.
 - docs/log/2026-08-06 1010 Inspect GitHub Pages source.md - added a one-time authenticated source inspection after the cleaned deployment still timed out.
 - docs/log/2026-08-06 0957 Fix Pages cleanup request.md - replaced the unavailable Octokit Pages-cancel helper with a raw authenticated API request.
 - docs/log/2026-08-06 0955 Clear stale GitHub Pages deployment.md - added a one-time Pages API cleanup for the stale deployment that kept native master runs queued.
