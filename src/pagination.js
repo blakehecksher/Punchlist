@@ -97,7 +97,7 @@ export function paginateSummary(entries) {
 
 export function paginateDetail(data, layout, options = {}) {
   const { columns, firstPageRows, otherPageRows } = getLayoutMetrics(layout);
-  const { includeSiteConditions = true } = options;
+  const { includeSiteConditions = true, includeIssuanceEnd = false } = options;
   const pages = [];
   const sections = buildSections(data);
 
@@ -175,6 +175,11 @@ export function paginateDetail(data, layout, options = {}) {
   });
 
   flushRowGroup();
+  if (includeIssuanceEnd) {
+    if (rowsUsed >= rowsForPage()) flushPage();
+    currentPage.push({ type: "issuanceEnd" });
+    rowsUsed += 1;
+  }
   if (currentPage.length > 1) pages.push(currentPage);
 
   return pages;

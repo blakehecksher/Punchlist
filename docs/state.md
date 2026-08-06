@@ -1,37 +1,55 @@
 # State
-_Last updated: 2026-08-04_
+_Last updated: 2026-08-06_
 
 ## Current focus
-Publish the Punch List app from GitHub Pages so it can be shared by URL.
+Maintain the release-ready import-to-issued-PDF workflow with predictable numbering, formatting, and correction history.
 
 ## What's working
-- The local Vite/React app passes `npm.cmd run lint`.
-- The production build passes with `npm.cmd run build`.
-- The project is initialized as a Git repository on `master`.
-- The initial commit is pushed to `https://github.com/blakehecksher/Punchlist.git`.
-- `.github/workflows/deploy.yml` builds `dist` and deploys it with GitHub Pages actions.
-- Relative build assets support the repository Pages URL at `/Punchlist/`.
+- The local Vite/React app passes `npm.cmd run lint` and `npm.cmd run build`.
+- Detail pages use one fixed four-card (2 x 2) layout; older saved six-card layouts migrate automatically.
+- General items use `GEN-NN`; an unnumbered Exterior section uses `EXT-NN`. Old `GN`, `000`, and `RM` exports still match during re-import.
+- A clean first import is treated as the baseline and shows zero new items. Opening a correction or the next issuance clears prior new markers; items added afterward can be underlined as new.
+- Import Notes displays Bold, Underline, and Strikethrough directly in the editor and document through the toolbar or Ctrl+B, Ctrl+U, and Ctrl+Shift+X.
+- Formatting can span several item lines. Serialization balances formatting tags per line so bullets remain parseable.
+- Formatted section headings such as underlined General or bold Exterior are normalized back to their proper section names.
+- Re-import recognizes formatted issue-code prefixes and removes the prefix from descriptions instead of duplicating it.
+- `Print PDF & issue` creates a dated immutable snapshot, stores its document and photos, locks the project, and opens Print/PDF.
+- Unlock to correct opens an editable Correction draft; correction and punch-list titles are prefilled, editable, and may be blank.
+- The final printed page contains a top-left `End of Punch List` record with a full-width rule and indented issuance lines. Ten records fill the first column before a second column begins.
+- The screen-only Issuances workspace remains at the bottom with a toolbar jump action, lock/correction controls, editable titles, dates, counts, and Reprint.
+- Sidebar and Import Notes states keep the Issuances workspace aligned with the document.
 
 ## In progress
-- Enable GitHub Pages as the repository's source: Settings → Pages → Build and deployment → GitHub Actions.
+- Remaining release-readiness improvements: Print/PDF metadata preflight, destructive-action recovery, local-save/backup messaging, and a stronger existing-project import-success handoff.
 
 ## Known issues
-- The GitHub Pages settings screen was not accessible from the current browser session because it was signed out.
+- Item codes in the working draft are derived from the current room name; each issued snapshot is stable, but the live code can change before the next issuance.
+- Bold and strikethrough still influence revised/completed counts; explicit lifecycle state is not implemented.
+- Re-import can remove missing working items, and direct item/room removal has no visible recovery path. Issued snapshots remain intact.
+- Print/PDF can still be issued with blank project metadata; there is no short preflight yet.
+- Local-only persistence and the importance of downloading a backup are not explained prominently.
 - `paginateDetail` does not charge empty sections against the page row budget.
-- The `u` branch of `containsInlineTag` in `PunchListApp.jsx` is dead code.
+- The rich outline editor relies on the browser's content-editing command support for formatting.
 
 ## Next actions
-1. In GitHub repository Settings → Pages, select GitHub Actions as the source.
-2. Wait for the `Deploy to GitHub Pages` workflow to complete.
-3. Share `https://blakehecksher.github.io/Punchlist/`.
+1. Add a short issue preflight for blank project metadata and optional issuance notes.
+2. Add undo/recovery for removed rooms and items, plus review before re-import removes missing items.
+3. Enable and verify GitHub Pages deployment.
 
 ## How to verify
 ```text
 npm.cmd run lint
 npm.cmd run build
+Import General and Exterior into a clean project; confirm GEN-01, EXT-01, and 0 new.
+Underline or bold the General/Exterior headings and confirm they remain section headings.
+Select text across two or more item lines and apply Bold/Underline/Strike; confirm the outline still imports as separate items.
+Re-import an older GN/000/RM-numbered outline and confirm existing items update rather than duplicate.
+Open the final page and confirm the End of Punch List record is top-left with a full-width rule and indented entries.
 git -c safe.directory='G:/Files/Github/Punchlist' status --short --branch
 ```
 
 ## Recent logs
-- docs/log/2026-08-04 0116 GitHub Pages setup.md — initialized the repository, pushed the app, and documented the final Pages setting.
-- docs/log/2026-08-01 1515 Rotated photo pan direction - corrected aspect-ratio-aware — corrected cover sizing so panning remains intuitive after rotation.
+- docs/log/2026-08-06 0052 Parser semantics and document ending.md - added GEN/EXT aliases, baseline new-item logic, safe multi-line formatting, formatted-heading parsing, and the left-aligned multi-column issuance ending.
+- docs/log/2026-08-06 0017 Issuance document ending and importer fixes.md - fixed four-card pagination, document-end issuance history, editable labels, importer formatting edge cases, and panel alignment.
+- docs/log/2026-08-05 2332 Immutable issues and rich notes.md - implemented lock/correct/reissue history, true WYSIWYG outline formatting, and snapshot-aware backups.
+- docs/log/2026-08-05 2242 Issuance flow and formatting.md - expanded the example, exposed formatting shortcuts, and defined the recommended issuance model.

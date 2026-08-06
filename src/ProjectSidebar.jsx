@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { DENSITY_OPTIONS } from "./layout.js";
 
 function TrashIcon() {
   return (
@@ -52,6 +51,7 @@ export default function ProjectSidebar({
   onLoadFromFile,
   onClear,
   clearConfirm,
+  readOnly = false,
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [documentSort, setDocumentSort] = useState("date");
@@ -152,7 +152,9 @@ export default function ProjectSidebar({
                 >
                   <span className="sidebar-item-name">{projectName}</span>
                   <span className="sidebar-item-meta">
-                    {proj.lastSaved || "No date"}
+                    {proj.isExample
+                      ? `Practice project · ${proj.lastSaved || "No date"}`
+                      : proj.lastSaved || "No date"}
                   </span>
                 </button>
                 <button
@@ -179,27 +181,11 @@ export default function ProjectSidebar({
           <details className="sidebar-disclosure">
             <summary>Document settings</summary>
             <div className="sidebar-disclosure-body">
-              <div className="sidebar-label-sub">Cards per page</div>
-              <div className="sidebar-density">
-                {DENSITY_OPTIONS.map((density, index) => {
-                  const labels = ["4 Cards", "6 Cards"];
-                  return (
-                    <button
-                      key={density}
-                      className={`sidebar-density-btn${layout.density === density ? " sidebar-density-btn--active" : ""}`}
-                      onClick={() => onLayoutChange({ density })}
-                      type="button"
-                      title={`${labels[index]} per page`}
-                    >
-                      {labels[index]}
-                    </button>
-                  );
-                })}
-              </div>
               <label className="sidebar-toggle-row">
                 <input
                   type="checkbox"
                   checked={layout.showSummary}
+                  disabled={readOnly}
                   onChange={(event) =>
                     onLayoutChange({ showSummary: event.target.checked })
                   }
@@ -210,6 +196,7 @@ export default function ProjectSidebar({
                 <input
                   type="checkbox"
                   checked={layout.showCount}
+                  disabled={readOnly}
                   onChange={(event) =>
                     onLayoutChange({ showCount: event.target.checked })
                   }
@@ -222,7 +209,12 @@ export default function ProjectSidebar({
           <details className="sidebar-disclosure">
             <summary>More actions</summary>
             <div className="sidebar-disclosure-body">
-              <button className="sidebar-action-btn" onClick={onSortRooms} type="button">
+              <button
+                className="sidebar-action-btn"
+                onClick={onSortRooms}
+                disabled={readOnly}
+                type="button"
+              >
                 <span className="sidebar-action-icon" aria-hidden="true">
                   <SortIcon />
                 </span>
@@ -265,6 +257,7 @@ export default function ProjectSidebar({
               <button
                 className={`sidebar-action-btn sidebar-action-btn--danger${clearConfirm ? " sidebar-action-btn--confirm" : ""}`}
                 onClick={onClear}
+                disabled={readOnly}
                 type="button"
               >
                 <span className="sidebar-action-icon sidebar-action-icon--reset" aria-hidden="true">

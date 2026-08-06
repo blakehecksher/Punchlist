@@ -14,13 +14,37 @@ const STRUCK_ISSUE_CODE_CAPTURE_RE =
   /^((?:~~|\*\*|__|\*)*)~~((?:[A-Z]{2,4}|\d{2,4})-(\d+))~~\s*:\s*/i;
 const ISSUE_CODE_CAPTURE_RE =
   /^((?:~~|\*\*|__|\*)*)((?:[A-Z]{2,4}|\d{2,4})-(\d+))\s*:\s*/i;
+const HTML_ISSUE_CODE_CAPTURE_RE =
+  /^((?:<(?:b|strong|i|em|u|s|del|strike)>)*?)((?:[A-Z]{2,4}|\d{2,4})-(\d+))(?:<\/(?:b|strong|i|em|u|s|del|strike)>)*\s*:\s*/i;
 
 function normalizeIndent(line) {
   return line.replace(/\t/g, "    ");
 }
 
+function normalizeFormattedBulletLine(line) {
+  const htmlWrapped = line.match(
+    /^(\s*)((?:<(?:b|strong|i|em|u|s|del|strike)>)+)(\s*)((?:[-*+]|(?:\d+)[.)])\s+)(.*)((?:<\/(?:b|strong|i|em|u|s|del|strike)>)+)\s*$/i,
+  );
+  if (htmlWrapped) {
+    return `${htmlWrapped[1]}${htmlWrapped[3]}${htmlWrapped[4]}${htmlWrapped[2]}${htmlWrapped[5]}${htmlWrapped[6]}`;
+  }
+
+  const markdownWrapped = line.match(
+    /^(\s*)(\*\*|__|~~|\*)(\s*)((?:[-*+]|(?:\d+)[.)])\s+)(.*)\2\s*$/,
+  );
+  if (markdownWrapped) {
+    return `${markdownWrapped[1]}${markdownWrapped[3]}${markdownWrapped[4]}${markdownWrapped[2]}${markdownWrapped[5]}${markdownWrapped[2]}`;
+  }
+
+  return line;
+}
+
 function normalizeSectionName(name) {
-  return name.trim().replace(/\s+/g, " ");
+  return name
+    .replace(/<\/?(?:b|strong|i|em|u|s|del|strike)>/gi, "")
+    .replace(/\*\*|__|~~|\*/g, "")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 function classifySection(name) {
@@ -71,6 +95,17 @@ function normalizeIssueCode(rawCode, rawSeq) {
 
 function parseItemWithCode(rawText) {
   const trimmed = rawText.trim();
+  const htmlMatch = trimmed.match(HTML_ISSUE_CODE_CAPTURE_RE);
+  if (htmlMatch) {
+    return {
+      issueCode: normalizeIssueCode(htmlMatch[2], htmlMatch[3]),
+      isNew: /<(?:u)>/i.test(htmlMatch[1]),
+      description: convertInlineMarkdownToHtml(
+        trimmed.slice(htmlMatch[0].length).trim(),
+      ),
+    };
+  }
+
   const struckUnderlinedMatch = trimmed.match(
     STRUCK_UNDERLINED_ISSUE_CODE_CAPTURE_RE,
   );
@@ -174,6 +209,7 @@ function parseOutlineSections(text) {
   const lines = text
     .split("\n")
     .map(normalizeIndent)
+    .map(normalizeFormattedBulletLine)
     .map((line) => line.replace(/\s+$/, ""))
     .filter((line) => line.trim() && line.trim() !== "---");
 
@@ -221,7 +257,7 @@ function parseHeadingSections(text) {
   let current = null;
 
   for (const rawLine of text.split("\n")) {
-    const normalized = normalizeIndent(rawLine);
+    const normalized = normalizeFormattedBulletLine(normalizeIndent(rawLine));
     const line = normalized.trim();
     if (!line || line === "---") continue;
 

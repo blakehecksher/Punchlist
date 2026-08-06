@@ -41,36 +41,54 @@ export function getNextIssueSeq(items = [], nextIssueSeq = 1) {
 
 const ROOM_NUMBER_RE = /\b\d{2,4}\b/;
 
-/**
- * Rooms with no number in their name fall back to "000" rather than a letter
- * code. It sorts to the top of the document and reads as an obvious blank,
- * so the missing room number gets noticed and filled in.
- */
+/** Rooms without a number still use 000 unless they have a known area code. */
 export const UNNUMBERED_ROOM_PREFIX = "000";
+export const EXTERIOR_ROOM_PREFIX = "EXT";
+export const GENERAL_NOTES_PREFIX = "GEN";
 
 /** The pre-2026-07 fallback, still recognised when re-importing older notes. */
 export const LEGACY_UNNUMBERED_ROOM_PREFIX = "RM";
+export const LEGACY_GENERAL_NOTES_PREFIX = "GN";
+
+export function isExteriorRoom(roomName = "") {
+  return /\bexterior\b/i.test(roomName);
+}
 
 export function isUnnumberedRoom(roomName = "") {
-  return !ROOM_NUMBER_RE.test(roomName);
+  return !ROOM_NUMBER_RE.test(roomName) && !isExteriorRoom(roomName);
 }
 
 export function getRoomIssuePrefix(roomName = "") {
   const match = roomName.match(ROOM_NUMBER_RE);
-  return match ? match[0] : UNNUMBERED_ROOM_PREFIX;
+  if (match) return match[0];
+  return isExteriorRoom(roomName)
+    ? EXTERIOR_ROOM_PREFIX
+    : UNNUMBERED_ROOM_PREFIX;
 }
 
 export function formatIssueCode(kind, title, issueSeq) {
-  const prefix = kind === "generalNotes" ? "GN" : getRoomIssuePrefix(title);
+  const prefix =
+    kind === "generalNotes" ? GENERAL_NOTES_PREFIX : getRoomIssuePrefix(title);
   return `${prefix}-${String(issueSeq ?? 0).padStart(2, "0")}`;
 }
 
 /**
- * The code this item would have carried under the old "RM" fallback, so a
- * merge re-import of notes copied before the change still matches the
- * existing item instead of duplicating it. Null when there is no old form.
+ * Every older code this item may have carried, so re-importing a previously
+ * exported outline still updates the existing item instead of duplicating it.
  */
-export function formatLegacyIssueCode(kind, title, issueSeq) {
-  if (kind === "generalNotes" || !isUnnumberedRoom(title)) return null;
-  return `${LEGACY_UNNUMBERED_ROOM_PREFIX}-${String(issueSeq ?? 0).padStart(2, "0")}`;
+export function formatLegacyIssueCodes(kind, title, issueSeq) {
+  const sequence = String(issueSeq ?? 0).padStart(2, "0");
+  if (kind === "generalNotes") {
+    return [`${LEGACY_GENERAL_NOTES_PREFIX}-${sequence}`];
+  }
+  if (isExteriorRoom(title) && !ROOM_NUMBER_RE.test(title)) {
+    return [
+      `${UNNUMBERED_ROOM_PREFIX}-${sequence}`,
+      `${LEGACY_UNNUMBERED_ROOM_PREFIX}-${sequence}`,
+    ];
+  }
+  if (isUnnumberedRoom(title)) {
+    return [`${LEGACY_UNNUMBERED_ROOM_PREFIX}-${sequence}`];
+  }
+  return [];
 }

@@ -62,9 +62,12 @@ export function saveProjectData(id, data) {
   const index = loadIndex();
   const entry = index.find((e) => e.id === id);
   if (entry) {
-    entry.name = data.project || "Untitled punch list";
+    entry.name = data.isExample
+      ? `${data.project || "Example punch list"} (Example)`
+      : data.project || "Untitled punch list";
     entry.projectNum = data.projectNum || "";
     entry.lastSaved = data.date || "";
+    entry.isExample = Boolean(data.isExample);
     saveIndex(index);
   }
 }
@@ -92,9 +95,12 @@ export function createProject(data) {
   const index = loadIndex();
   index.push({
     id,
-    name: data.project || "Untitled punch list",
+    name: data.isExample
+      ? `${data.project || "Example punch list"} (Example)`
+      : data.project || "Untitled punch list",
     projectNum: data.projectNum || "",
     lastSaved: data.date || "",
+    isExample: Boolean(data.isExample),
   });
   saveIndex(index);
   saveProjectData(id, data);

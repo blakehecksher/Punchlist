@@ -3,8 +3,12 @@ import {
   idbGetAllPhotos,
   idbSetPhoto,
   idbClearAll,
+  idbClearProjectPhotos,
   idbDeletePhoto,
   idbCopyProjectPhotos,
+  idbSetIssueSnapshot,
+  idbGetIssueSnapshot,
+  idbCopyProjectIssueSnapshots,
 } from "./idb.js";
 import {
   convertHtmlToImportText,
@@ -17,10 +21,11 @@ import {
   saveProjectToFile,
   loadProjectFromFile,
   restorePhotosToIdb,
+  restoreIssueSnapshotsToIdb,
 } from "./projectFile.js";
 import {
   formatIssueCode,
-  formatLegacyIssueCode,
+  formatLegacyIssueCodes,
   getNextIssueSeq,
   getRoomIssuePrefix,
   isUnnumberedRoom,
@@ -34,6 +39,7 @@ import {
 } from "./pagination.js";
 import ItemCard from "./ItemCard.jsx";
 import RichText from "./RichText.jsx";
+import OutlineEditor from "./OutlineEditor.jsx";
 import ProjectSidebar from "./ProjectSidebar.jsx";
 import {
   loadIndex,
@@ -50,9 +56,8 @@ import "./styles.css";
 const uid = () => Math.random().toString(36).slice(2, 9);
 const normalizeRoomKey = (name) =>
   name.trim().replace(/\s+/g, " ").toLowerCase();
-// Unnumbered rooms carry the "000" prefix, so they sort to the top where the
-// missing room number is obvious. Keep the fallback finite: a non-finite value
-// here makes the comparator return NaN and the name tiebreak unreachable.
+// Named prefixes such as EXT and the 000 missing-number fallback sort before
+// numbered rooms. Keep the fallback finite so the name tiebreak remains valid.
 const getRoomSortNumber = (roomName) => {
   const numeric = Number.parseInt(getRoomIssuePrefix(roomName), 10);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -74,14 +79,54 @@ const makeItem = (description = "", issueSeq = 1, isNew = false) => ({
   photo: null,
   photoPosition: null,
 });
-const insertAtSelection = (current, start, end, inserted) =>
-  `${current.slice(0, start)}${inserted}${current.slice(end)}`;
 const getCurrentDateLabel = (date = new Date()) =>
   new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
   }).format(date);
+const makeIssuanceState = () => ({
+  locked: false,
+  draftMode: "initial",
+  correctionTargetId: null,
+  draftTitle: null,
+  newMarkerBaselineVersion: 1,
+  history: [],
+});
+const normalizeIssuance = (issuance) => ({
+  ...makeIssuanceState(),
+  ...(issuance ?? {}),
+  history: Array.isArray(issuance?.history) ? issuance.history : [],
+});
+const getDefaultIssuanceTitle = (issueNumber, revision = 0) => {
+  if (revision > 0) return `Correction ${revision}`;
+  return issueNumber > 1 ? `Punch List ${issueNumber}` : "Punch List";
+};
+const getIssuanceTitle = (record) => {
+  if (!record) return "";
+  if (Object.prototype.hasOwnProperty.call(record, "title")) {
+    return record.title ?? "";
+  }
+  return getDefaultIssuanceTitle(record.issueNumber ?? 1, record.revision ?? 0);
+};
+const getIssuedDateLabel = (issuedAt) => {
+  const date = new Date(issuedAt);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+};
+const countDocumentItems = (data) =>
+  data.generalNotes.length +
+  data.rooms.reduce((total, room) => total + room.items.length, 0);
+const countDocumentPhotos = (data) =>
+  [...data.generalNotes, ...data.rooms.flatMap((room) => room.items)].filter(
+    (item) => Boolean(item.photo),
+  ).length;
 const PUNCH_LIST_TEMPLATE = `- Site Conditions
     - Site condition 1
     - Site condition 2
@@ -91,6 +136,33 @@ const PUNCH_LIST_TEMPLATE = `- Site Conditions
 - Room Name 101
     - Item 1
     - Item 2`;
+const EXAMPLE_VERSION = 2;
+const STARTER_OUTLINE = `- Site Conditions
+    - Protect finished flooring through the final walkthrough
+    - Maintain dust protection at occupied areas
+- General Notes
+    - Clean work areas and remove construction debris
+    - Match adjacent paint sheen at touch-up locations
+- Kitchen 102
+    - Adjust cabinet reveal
+    - Touch up paint at window return
+- Study 410
+    - Install door stop
+    - Tighten hinge screws
+- Living Room 201
+    - Caulk baseboard at east wall
+    - Touch up paint at built-in
+- Primary Bedroom 301
+    - Adjust closet door alignment
+    - Reinstall towel bar
+- Bathroom 302
+    - Replace cracked tile at niche
+    - Clean grout at shower floor
+- Hall 2nd Floor
+    - Patch and paint wall at railing
+- Exterior
+    - Seal around window trim
+    - Touch up siding at south corner`;
 const DEFAULT_HEADER_NOTE =
   "Items shown <u>underlined</u> are new as of this walkthrough.<br>Items shown in <b>bold</b> type indicate revisions.<br>Items shown with <s>strikethrough</s> type are complete as of this walkthrough and will be removed from subsequent punch list.";
 
@@ -147,16 +219,18 @@ function buildIssueCodeIndex(items, kind, title) {
   items.forEach((item, position) => {
     index.set(formatIssueCode(kind, title, item.issueSeq).toUpperCase(), position);
 
-    // Notes copied out before unnumbered rooms moved from "RM" to "000" still
-    // carry the old code; match them rather than importing duplicates.
-    const legacyCode = formatLegacyIssueCode(kind, title, item.issueSeq);
-    if (legacyCode && !index.has(legacyCode)) index.set(legacyCode, position);
+    formatLegacyIssueCodes(kind, title, item.issueSeq).forEach((legacyCode) => {
+      if (!index.has(legacyCode)) index.set(legacyCode, position);
+    });
   });
 
   return index;
 }
 
 function mergeImportedNotes(state, payload) {
+  const allowNewMarkers = normalizeIssuance(state.issuance).history.length > 0;
+  const importedIsNew = (imported) =>
+    allowNewMarkers && Boolean(imported.isNew);
   const rooms = state.rooms.map((room) => ({
     ...room,
     items: [...room.items],
@@ -190,7 +264,7 @@ function mergeImportedNotes(state, payload) {
       nextGeneralNotes[existingIndex] = {
         ...nextGeneralNotes[existingIndex],
         description: imported.description,
-        isNew: imported.isNew,
+        isNew: importedIsNew(imported),
       };
       updatedCount += 1;
       return;
@@ -198,7 +272,7 @@ function mergeImportedNotes(state, payload) {
 
     touchedGeneralIndices.add(nextGeneralNotes.length);
     nextGeneralNotes.push(
-      makeItem(imported.description, nextGeneralIssueSeq, imported.isNew),
+      makeItem(imported.description, nextGeneralIssueSeq, importedIsNew(imported)),
     );
     nextGeneralIssueSeq += 1;
     newCount += 1;
@@ -243,7 +317,7 @@ function mergeImportedNotes(state, payload) {
           nextItems[matchedIndex] = {
             ...nextItems[matchedIndex],
             description: imported.description,
-            isNew: imported.isNew,
+            isNew: importedIsNew(imported),
           };
           updatedCount += 1;
           return;
@@ -251,7 +325,7 @@ function mergeImportedNotes(state, payload) {
 
         touchedRoomIndices.add(nextItems.length);
         nextItems.push(
-          makeItem(imported.description, nextRoomIssueSeq, imported.isNew),
+          makeItem(imported.description, nextRoomIssueSeq, importedIsNew(imported)),
         );
         nextRoomIssueSeq += 1;
         newCount += 1;
@@ -276,7 +350,7 @@ function mergeImportedNotes(state, payload) {
       const item = makeItem(
         imported.description,
         nextRoomIssueSeq,
-        imported.isNew,
+        importedIsNew(imported),
       );
       nextRoomIssueSeq += 1;
       newCount += 1;
@@ -352,6 +426,7 @@ function makeBlankProjectData() {
     generalNotesTitle: "General",
     headerNote: DEFAULT_HEADER_NOTE,
     layout: { ...DEFAULT_LAYOUT },
+    issuance: makeIssuanceState(),
     nextGeneralIssueSeq: 1,
     siteConditions: [],
     generalNotes: [],
@@ -359,12 +434,35 @@ function makeBlankProjectData() {
   };
 }
 
-function makeRoom(name = "Room Name", firstDescription = "") {
+function makeRoom(name = "Room Name", firstDescription = "", isNew = false) {
   return {
     id: uid(),
     name,
     nextItemIssueSeq: 2,
-    items: [makeItem(firstDescription, 1, true)],
+    items: [makeItem(firstDescription, 1, isNew)],
+  };
+}
+
+function makeExampleEntries(prefix, entries) {
+  return entries.map((entry, index) => {
+    const details = typeof entry === "string" ? { description: entry } : entry;
+    return {
+      id: `${prefix}-${index + 1}`,
+      issueSeq: index + 1,
+      isNew: details.isNew ?? true,
+      description: details.description,
+      photo: null,
+      photoPosition: null,
+    };
+  });
+}
+
+function makeExampleRoom(id, name, entries) {
+  return {
+    id,
+    name,
+    nextItemIssueSeq: entries.length + 1,
+    items: makeExampleEntries(id, entries),
   };
 }
 
@@ -539,15 +637,89 @@ const INITIAL_DATA = {
       ],
     },
   ],
-  // Keep the historical sample above as a development reference, but do not
-  // put a five-page example document in front of a first-time user.
-  ...makeBlankProjectData(),
+  // Keep the historical sample above as a development reference. The final
+  // overrides below are the polished practice project shown to first-time
+  // users, with enough sections and rooms to demonstrate a real document.
+  ...{
+    ...makeBlankProjectData(),
+    isExample: true,
+    exampleVersion: EXAMPLE_VERSION,
+    project: "184 Cedar Avenue",
+    projectNum: "PL-001",
+    firm: "Northline Studio",
+    punchlistDate: "August 5, 2026 · 9:00 AM",
+    layout: { ...DEFAULT_LAYOUT, showSummary: false },
+    siteConditions: [
+      "Protect finished flooring through the final walkthrough.",
+      "Maintain dust protection at occupied areas.",
+      "Coordinate access with the superintendent before 8:00 AM.",
+    ],
+    nextGeneralIssueSeq: 4,
+    generalNotes: makeExampleEntries("example-general", [
+      "Clean work areas and remove construction debris before final review.",
+      {
+        isNew: false,
+        description:
+          "<b>Match adjacent paint sheen at all touch-up locations.</b>",
+      },
+      "Verify hardware operation after all adjustments are complete.",
+    ]),
+    rooms: [
+      makeExampleRoom("example-kitchen", "Kitchen 102", [
+        "Adjust cabinet reveal for a consistent gap.",
+        "Touch up paint at the window return.",
+        "Seal the countertop-to-backsplash joint.",
+      ]),
+      makeExampleRoom("example-study", "Study 410", [
+        {
+          isNew: false,
+          description: "<s>Install door stop.</s>",
+        },
+        "Tighten hinge screws at the entry door.",
+      ]),
+      makeExampleRoom("example-living", "Living Room 201", [
+        "Caulk the baseboard joint at the east wall.",
+        "Touch up paint at the built-in shelves.",
+      ]),
+      makeExampleRoom("example-bedroom", "Primary Bedroom 301", [
+        "Adjust closet doors for even alignment.",
+        "Reinstall the towel bar at the dressing area.",
+      ]),
+      makeExampleRoom("example-bathroom", "Bathroom 302", [
+        "Replace the cracked tile at the shower niche.",
+        "Clean grout haze at the shower floor.",
+      ]),
+      makeExampleRoom("example-exterior", "Exterior", [
+        "Seal around the south window trim.",
+        "Touch up siding at the southeast corner.",
+      ]),
+    ],
+  },
 };
 
+function refreshExampleFixture(stored) {
+  if (!stored?.isExample || stored.exampleVersion === EXAMPLE_VERSION) {
+    return stored;
+  }
+
+  return {
+    ...INITIAL_DATA,
+    date: getCurrentDateLabel(),
+  };
+}
+
 function normalizeStoredData(stored, photos = {}) {
+  const shouldClearLegacyNewMarkers = Boolean(
+    !stored?.isExample &&
+      stored?.issuance?.history?.length > 0 &&
+      stored?.issuance?.newMarkerBaselineVersion !== 1,
+  );
   const mergePhotos = (items = []) =>
     items.map((item) => {
-      const normalizedItem = { ...item, isNew: Boolean(item.isNew) };
+      const normalizedItem = {
+        ...item,
+        isNew: shouldClearLegacyNewMarkers ? false : Boolean(item.isNew),
+      };
       const entry = photos[item.id];
       if (!entry) return { ...normalizedItem, photo: null, photoPosition: null };
       if (typeof entry === "string")
@@ -594,13 +766,14 @@ function normalizeStoredData(stored, photos = {}) {
     ? ""
     : (stored?.firm ?? "");
 
-  return withIssueSequences({
+  const normalized = withIssueSequences({
     ...makeBlankProjectData(),
     ...stored,
     project,
     projectNum,
     firm,
     layout: normalizeLayout(stored?.layout),
+    issuance: normalizeIssuance(stored?.issuance),
     punchlistDate: stored?.punchlistDate ?? "",
     generalNotesTitle: stored?.generalNotesTitle ?? "General",
     siteConditions: stored?.siteConditions || [],
@@ -610,6 +783,22 @@ function normalizeStoredData(stored, photos = {}) {
       items: mergePhotos(room.items || []),
     })),
   });
+
+  if (normalized.isExample || normalized.issuance.history.length > 0) {
+    return normalized;
+  }
+
+  return {
+    ...normalized,
+    generalNotes: normalized.generalNotes.map((item) => ({
+      ...item,
+      isNew: false,
+    })),
+    rooms: normalized.rooms.map((room) => ({
+      ...room,
+      items: room.items.map((item) => ({ ...item, isNew: false })),
+    })),
+  };
 }
 
 const stripPhotos = (data) => ({
@@ -667,6 +856,33 @@ function reducer(state, action) {
         }),
       };
 
+    case "setIssuance":
+      return {
+        ...state,
+        issuance: normalizeIssuance({
+          ...normalizeIssuance(state.issuance),
+          ...action.issuance,
+        }),
+      };
+
+    case "startIssuanceDraft":
+      return {
+        ...state,
+        generalNotes: state.generalNotes.map((item) => ({
+          ...item,
+          isNew: false,
+        })),
+        rooms: state.rooms.map((room) => ({
+          ...room,
+          items: room.items.map((item) => ({ ...item, isNew: false })),
+        })),
+        issuance: normalizeIssuance({
+          ...normalizeIssuance(state.issuance),
+          ...action.issuance,
+          newMarkerBaselineVersion: 1,
+        }),
+      };
+
     case "setSiteCondition": {
       const next = [...state.siteConditions];
       next[action.index] = action.value;
@@ -711,7 +927,14 @@ function reducer(state, action) {
       return {
         ...state,
         nextGeneralIssueSeq: nextIssueSeq + 1,
-        generalNotes: [...state.generalNotes, makeItem("", nextIssueSeq, true)],
+        generalNotes: [
+          ...state.generalNotes,
+          makeItem(
+            "",
+            nextIssueSeq,
+            normalizeIssuance(state.issuance).history.length > 0,
+          ),
+        ],
       };
     }
 
@@ -740,7 +963,14 @@ function reducer(state, action) {
                 return {
                   ...room,
                   nextItemIssueSeq: nextIssueSeq + 1,
-                  items: [...room.items, makeItem("", nextIssueSeq, true)],
+                  items: [
+                    ...room.items,
+                    makeItem(
+                      "",
+                      nextIssueSeq,
+                      normalizeIssuance(state.issuance).history.length > 0,
+                    ),
+                  ],
                 };
               })(),
         ),
@@ -770,7 +1000,14 @@ function reducer(state, action) {
     case "addRoom":
       return {
         ...state,
-        rooms: [...state.rooms, makeRoom()],
+        rooms: [
+          ...state.rooms,
+          makeRoom(
+            "Room Name",
+            "",
+            normalizeIssuance(state.issuance).history.length > 0,
+          ),
+        ],
       };
 
     case "removeRoom":
@@ -793,6 +1030,7 @@ function reducer(state, action) {
         title: state.title,
         date: state.date,
         firm: state.firm,
+        issuance: normalizeIssuance(state.issuance),
         // Density / summary / photo toggles are view preferences, not punch
         // list content, so clearing the body should not reset them.
         layout: normalizeLayout(state.layout),
@@ -851,11 +1089,15 @@ export default function PunchListApp() {
   const saveTimer = useRef(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState("");
+  const outlineEditorRef = useRef(null);
   const [importStatus, setImportStatus] = useState("");
   const [templateCopyStatus, setTemplateCopyStatus] = useState("");
   const [clearConfirm, setClearConfirm] = useState(false);
   const clearTimer = useRef(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [printPreview, setPrintPreview] = useState(null);
+  const afterPrintRestoreRef = useRef(null);
+  const issuanceFooterRef = useRef(null);
 
   const [activeId, setActiveIdState] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -894,8 +1136,15 @@ export default function PunchListApp() {
 
         const stored = loadProjectData(id);
         if (stored) {
+          const loadable = refreshExampleFixture(stored);
+          if (loadable !== stored) saveProjectData(id, stripPhotos(loadable));
           const photos = await idbGetAllPhotos(id);
-          dispatch({ type: "load", data: normalizeStoredData(stored, photos) });
+          const normalized = normalizeStoredData(loadable, photos);
+          dispatch({ type: "load", data: normalized });
+          if (normalized.isExample) {
+            setImportText(STARTER_OUTLINE);
+            setImportOpen(true);
+          }
           setSaveStatus("Loaded");
           setTimeout(() => setSaveStatus(""), 1500);
         }
@@ -906,7 +1155,7 @@ export default function PunchListApp() {
   }, []);
 
   useEffect(() => {
-    if (!activeIdRef.current) return;
+    if (!activeIdRef.current || printPreview) return;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       try {
@@ -919,7 +1168,7 @@ export default function PunchListApp() {
       }
     }, 800);
     return () => clearTimeout(saveTimer.current);
-  }, [data]);
+  }, [data, printPreview]);
 
   useEffect(() => {
     try {
@@ -986,11 +1235,18 @@ export default function PunchListApp() {
       try {
         const stored = loadProjectData(id);
         if (stored) {
+          const loadable = refreshExampleFixture(stored);
+          if (loadable !== stored) saveProjectData(id, stripPhotos(loadable));
           const photos = await idbGetAllPhotos(id);
+          const normalized = normalizeStoredData(loadable, photos);
           dispatch({
             type: "load",
-            data: normalizeStoredData(stored, photos),
+            data: normalized,
           });
+          setImportOpen(Boolean(normalized.isExample));
+          setImportText(normalized.isExample ? STARTER_OUTLINE : "");
+          setImportStatus("");
+          setHelpOpen(false);
         }
       } catch {
         // Ignore corrupt storage.
@@ -1013,6 +1269,10 @@ export default function PunchListApp() {
     dispatch({ type: "load", data: blankData });
     refreshIndex();
     setSidebarOpen(false);
+    setImportText("");
+    setImportStatus("");
+    setImportOpen(true);
+    setHelpOpen(false);
   }, [data, persistActiveProject]);
 
   const handleDuplicate = useCallback(async () => {
@@ -1029,6 +1289,7 @@ export default function PunchListApp() {
     // Item IDs carry over, so the photos have to be copied under the new
     // project's key namespace or the duplicate comes out with none.
     await idbCopyProjectPhotos(sourceId, id).catch(() => {});
+    await idbCopyProjectIssueSnapshots(sourceId, id).catch(() => {});
 
     activeIdRef.current = id;
     setActiveIdState(id);
@@ -1057,13 +1318,19 @@ export default function PunchListApp() {
     const next = remaining[remaining.length - 1];
 
     if (!next) {
-      const blankData = makeBlankProjectData();
-      const nextId = createProject(blankData);
+      const exampleData = {
+        ...INITIAL_DATA,
+        date: getCurrentDateLabel(),
+      };
+      const nextId = createProject(exampleData);
       activeIdRef.current = nextId;
       setActiveIdState(nextId);
       setActiveId(nextId);
-      dispatch({ type: "load", data: blankData });
+      dispatch({ type: "load", data: exampleData });
       refreshIndex();
+      setImportText(STARTER_OUTLINE);
+      setImportStatus("");
+      setImportOpen(true);
       return;
     }
 
@@ -1107,6 +1374,26 @@ export default function PunchListApp() {
   const handleImportSubmit = useCallback(() => {
     try {
       const parsed = parseImportText(importText);
+
+      if (data.isExample) {
+        persistActiveProject(data);
+        const blankData = makeBlankProjectData();
+        const importedData = mergeImportedNotes(blankData, parsed).data;
+        const id = createProject(importedData);
+
+        activeIdRef.current = id;
+        setActiveIdState(id);
+        setActiveId(id);
+        dispatch({ type: "load", data: importedData });
+        refreshIndex();
+        setImportText("");
+        setImportStatus("");
+        setImportOpen(false);
+        setSaveStatus("Punch list created");
+        setTimeout(() => setSaveStatus(""), 1800);
+        return;
+      }
+
       dispatch({ type: "mergeNotes", payload: parsed });
       setImportStatus(summarizeMerge(parsed, data));
       // The panel stays open: the status it just set is rendered inside it,
@@ -1117,38 +1404,44 @@ export default function PunchListApp() {
         error instanceof Error ? error.message : "Import failed.",
       );
     }
-  }, [data, importText]);
+  }, [data, importText, persistActiveProject]);
 
-  const handleImportPaste = useCallback(
-    (event) => {
-      const clipboard = event.clipboardData;
-      const html = clipboard?.getData("text/html") ?? "";
-      if (!html || !hasStructuredImportHtml(html)) return;
+  const handleOpenImport = useCallback(() => {
+    setImportOpen(true);
+    setHelpOpen(false);
+    setImportStatus("");
+    if (data.isExample && !importText.trim()) {
+      setImportText(STARTER_OUTLINE);
+    }
+  }, [data.isExample, importText]);
 
-      const converted = convertHtmlToImportText(html);
-      if (!converted) return;
+  const applyImportFormatting = useCallback((command, label) => {
+    const result = outlineEditorRef.current?.applyFormat(command, label);
+    if (!result) return;
+    setImportStatus(
+      result.ok
+        ? `${label} applied. The styling will carry into the punch list.`
+        : result.reason,
+    );
+  }, []);
 
-      event.preventDefault();
+  const handleImportShortcut = useCallback((label, result) => {
+    setImportStatus(
+      result.ok
+        ? `${label} applied. The styling will carry into the punch list.`
+        : result.reason,
+    );
+  }, []);
 
-      const textarea = event.target;
-      const selectionStart =
-        typeof textarea.selectionStart === "number"
-          ? textarea.selectionStart
-          : importText.length;
-      const selectionEnd =
-        typeof textarea.selectionEnd === "number"
-          ? textarea.selectionEnd
-          : selectionStart;
-
-      setImportText((current) =>
-        insertAtSelection(current, selectionStart, selectionEnd, converted),
-      );
-      setImportStatus(
-        "Rich paste converted to outline. Review the outline, then import.",
-      );
-    },
-    [importText],
-  );
+  const handleStructuredImportPaste = useCallback((html) => {
+    if (!html || !hasStructuredImportHtml(html)) return null;
+    const converted = convertHtmlToImportText(html);
+    if (!converted) return null;
+    setImportStatus(
+      "Rich paste converted to an editable outline. Review it, then import.",
+    );
+    return converted;
+  }, []);
 
   const handleCopyTemplate = useCallback(async () => {
     try {
@@ -1199,7 +1492,11 @@ export default function PunchListApp() {
       event.target.value = "";
 
       try {
-        const { data: fileData, photos } = await loadProjectFromFile(file);
+        const {
+          data: fileData,
+          photos,
+          issueSnapshots,
+        } = await loadProjectFromFile(file);
 
         // Save current project first
         persistActiveProject(data);
@@ -1212,6 +1509,7 @@ export default function PunchListApp() {
 
         // Restore photos into IndexedDB
         await restorePhotosToIdb(id, photos);
+        await restoreIssueSnapshotsToIdb(id, issueSnapshots);
 
         // Load with photos merged in
         const normalizedPhotos = await idbGetAllPhotos(id);
@@ -1233,6 +1531,212 @@ export default function PunchListApp() {
     [data, persistActiveProject],
   );
 
+  const handleUnlockForCorrection = useCallback(() => {
+    const current = normalizeIssuance(data.issuance);
+    const latest = current.history[current.history.length - 1];
+    if (!latest) return;
+    const nextRevision =
+      Math.max(
+        0,
+        ...current.history
+          .filter((entry) => entry.issueNumber === latest.issueNumber)
+          .map((entry) => entry.revision ?? 0),
+      ) + 1;
+
+    dispatch({
+      type: "startIssuanceDraft",
+      issuance: {
+        locked: false,
+        draftMode: "correction",
+        correctionTargetId: latest.id,
+        draftTitle: getDefaultIssuanceTitle(
+          latest.issueNumber ?? 1,
+          nextRevision,
+        ),
+      },
+    });
+    setSaveStatus("Punch list unlocked for correction");
+    setTimeout(() => setSaveStatus(""), 2200);
+  }, [data.issuance]);
+
+  const handleStartNextIssue = useCallback(() => {
+    const current = normalizeIssuance(data.issuance);
+    const nextNumber =
+      Math.max(
+        0,
+        ...current.history.map((entry) => entry.issueNumber ?? 0),
+      ) + 1;
+    dispatch({
+      type: "startIssuanceDraft",
+      issuance: {
+        locked: false,
+        draftMode: current.history.length > 0 ? "next" : "initial",
+        correctionTargetId: null,
+        draftTitle: getDefaultIssuanceTitle(nextNumber, 0),
+      },
+    });
+    setSaveStatus("Next issue opened for editing");
+    setTimeout(() => setSaveStatus(""), 1800);
+  }, [data.issuance]);
+
+  const handleIssueAndPrint = useCallback(async () => {
+    const projectId = activeIdRef.current;
+    if (!projectId) return;
+
+    const current = normalizeIssuance(data.issuance);
+    const correctionTarget =
+      current.draftMode === "correction"
+        ? current.history.find(
+            (entry) => entry.id === current.correctionTargetId,
+          ) ?? current.history[current.history.length - 1]
+        : null;
+    const issueNumber = correctionTarget
+      ? correctionTarget.issueNumber
+      : Math.max(0, ...current.history.map((entry) => entry.issueNumber ?? 0)) + 1;
+    const revision = correctionTarget
+      ? Math.max(
+          0,
+          ...current.history
+            .filter((entry) => entry.issueNumber === issueNumber)
+            .map((entry) => entry.revision ?? 0),
+        ) + 1
+      : 0;
+    const issuedAt = new Date().toISOString();
+    const id = uid();
+    const record = {
+      id,
+      issueNumber,
+      revision,
+      title:
+        current.draftTitle ?? getDefaultIssuanceTitle(issueNumber, revision),
+      issuedAt,
+      itemCount: countDocumentItems(data),
+      photoCount: countDocumentPhotos(data),
+      supersedesId: correctionTarget?.id ?? null,
+    };
+    const issuance = {
+      locked: true,
+      draftMode: null,
+      correctionTargetId: null,
+      draftTitle: null,
+      history: [...current.history, record],
+    };
+    const snapshot = { ...data, issuance };
+
+    try {
+      await idbSetIssueSnapshot(projectId, id, snapshot);
+      clearTimeout(saveTimer.current);
+      persistActiveProject(snapshot);
+      dispatch({ type: "load", data: snapshot });
+      setImportOpen(false);
+      setHelpOpen(false);
+      setSaveStatus("PDF issued and punch list locked");
+      setTimeout(() => setSaveStatus(""), 2200);
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => window.print());
+      });
+    } catch {
+      setSaveStatus("Issue could not be saved");
+      setTimeout(() => setSaveStatus(""), 3000);
+    }
+  }, [data, persistActiveProject]);
+
+  const handlePrintHistoricalIssue = useCallback(
+    async (record) => {
+      const projectId = activeIdRef.current;
+      if (!projectId) return;
+
+      try {
+        const snapshot = await idbGetIssueSnapshot(projectId, record.id);
+        if (!snapshot) throw new Error("Snapshot unavailable");
+        const currentTitles = new Map(
+          normalizeIssuance(data.issuance).history.map((entry) => [
+            entry.id,
+            getIssuanceTitle(entry),
+          ]),
+        );
+        const snapshotIssuance = normalizeIssuance(snapshot.issuance);
+        const snapshotWithTitles = {
+          ...snapshot,
+          issuance: {
+            ...snapshotIssuance,
+            history: snapshotIssuance.history.map((entry) =>
+              currentTitles.has(entry.id)
+                ? { ...entry, title: currentTitles.get(entry.id) }
+                : entry,
+            ),
+          },
+        };
+
+        clearTimeout(saveTimer.current);
+        persistActiveProject(data);
+        setPrintPreview({ record, workingData: data });
+        dispatch({ type: "load", data: snapshotWithTitles });
+
+        const restoreWorkingCopy = () => {
+          dispatch({ type: "load", data });
+          setPrintPreview(null);
+          afterPrintRestoreRef.current = null;
+        };
+
+        if (afterPrintRestoreRef.current) {
+          window.removeEventListener(
+            "afterprint",
+            afterPrintRestoreRef.current,
+          );
+        }
+        afterPrintRestoreRef.current = restoreWorkingCopy;
+        window.addEventListener("afterprint", restoreWorkingCopy, {
+          once: true,
+        });
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => window.print());
+        });
+      } catch {
+        setSaveStatus("That issued snapshot is unavailable");
+        setTimeout(() => setSaveStatus(""), 3000);
+      }
+    },
+    [data, persistActiveProject],
+  );
+
+  const handleReturnFromPrintPreview = useCallback(() => {
+    if (!printPreview?.workingData) return;
+    if (afterPrintRestoreRef.current) {
+      window.removeEventListener("afterprint", afterPrintRestoreRef.current);
+      afterPrintRestoreRef.current = null;
+    }
+    dispatch({ type: "load", data: printPreview.workingData });
+    setPrintPreview(null);
+  }, [printPreview]);
+
+  const handleSetIssuanceTitle = useCallback(
+    (recordId, title) => {
+      const current = normalizeIssuance(data.issuance);
+      dispatch({
+        type: "setIssuance",
+        issuance: {
+          history: current.history.map((entry) =>
+            entry.id === recordId ? { ...entry, title } : entry,
+          ),
+        },
+      });
+    },
+    [data.issuance],
+  );
+
+  const handleJumpToIssuances = useCallback(() => {
+    setImportOpen(false);
+    setHelpOpen(false);
+    requestAnimationFrame(() => {
+      issuanceFooterRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+  }, []);
+
   const handleClearAll = () => {
     if (!clearConfirm) {
       setClearConfirm(true);
@@ -1243,7 +1747,7 @@ export default function PunchListApp() {
     clearTimeout(clearTimer.current);
     setClearConfirm(false);
     if (activeIdRef.current) {
-      idbClearAll(activeIdRef.current).catch(() => {});
+      idbClearProjectPhotos(activeIdRef.current).catch(() => {});
     }
     dispatch({ type: "clearAll" });
   };
@@ -1266,6 +1770,34 @@ export default function PunchListApp() {
     });
   }, []);
 
+  const issuance = normalizeIssuance(data.issuance);
+  const latestIssue = issuance.history[issuance.history.length - 1] ?? null;
+  const isReadOnly = Boolean(issuance.locked || printPreview);
+  const nextIssueNumber =
+    Math.max(0, ...issuance.history.map((entry) => entry.issueNumber ?? 0)) + 1;
+  const pendingCorrectionRevision =
+    issuance.draftMode === "correction" && latestIssue
+      ? Math.max(
+          0,
+          ...issuance.history
+            .filter((entry) => entry.issueNumber === latestIssue.issueNumber)
+            .map((entry) => entry.revision ?? 0),
+        ) + 1
+      : 0;
+  const draftIssuanceTitle =
+    issuance.draftTitle ??
+    getDefaultIssuanceTitle(
+      issuance.draftMode === "correction"
+        ? (latestIssue?.issueNumber ?? 1)
+        : nextIssueNumber,
+      pendingCorrectionRevision,
+    );
+  const printButtonLabel = printPreview
+    ? "Print PDF"
+    : issuance.locked
+      ? "Reprint PDF"
+      : "Print PDF & issue";
+
   const layout = normalizeLayout(data.layout);
   const layoutMetrics = getLayoutMetrics(layout);
   const summaryEntries = [
@@ -1278,7 +1810,8 @@ export default function PunchListApp() {
         item.issueSeq,
       ),
       description: item.description,
-      isNew: Boolean(item.isNew),
+      isNew:
+        Boolean(item.isNew) || containsInlineTag(item.description, "u"),
       isRevised: containsInlineTag(item.description, "b"),
       isCompleted: containsInlineTag(item.description, "s"),
     })),
@@ -1288,7 +1821,8 @@ export default function PunchListApp() {
         location: room.name,
         issueCode: formatIssueCode("room", room.name, item.issueSeq),
         description: item.description,
-        isNew: Boolean(item.isNew),
+        isNew:
+          Boolean(item.isNew) || containsInlineTag(item.description, "u"),
         isRevised: containsInlineTag(item.description, "b"),
         isCompleted: containsInlineTag(item.description, "s"),
       })),
@@ -1300,6 +1834,7 @@ export default function PunchListApp() {
     : [];
   const detailPages = paginateDetail(data, layout, {
     includeSiteConditions: summaryPages.length === 0,
+    includeIssuanceEnd: true,
   });
   const pages = [
     ...summaryPages.map((segments) => ({ kind: "summary", segments })),
@@ -1428,7 +1963,8 @@ export default function PunchListApp() {
       item={item}
       issueCode={getSectionIssueCode(section, item)}
       issueCodeStyle={getIssueCodeStyle({
-        isNew: Boolean(item.isNew),
+        isNew:
+          Boolean(item.isNew) || containsInlineTag(item.description, "u"),
         isCompleted: containsInlineTag(item.description, "s"),
       })}
       density={layout.density}
@@ -1516,7 +2052,7 @@ export default function PunchListApp() {
           style={{ gridColumn: `span ${section.span}` }}
           onClick={() => dispatch({ type: "addGeneralNote" })}
         >
-          + Add note
+          + Add note to {data.generalNotesTitle || "General"}
         </button>
       );
     }
@@ -1530,7 +2066,7 @@ export default function PunchListApp() {
           dispatch({ type: "addRoomItem", roomId: section.sectionId })
         }
       >
-        + Add item
+        + Add item to {section.title || "this room"}
       </button>
     );
   };
@@ -1814,6 +2350,44 @@ export default function PunchListApp() {
     );
   };
 
+  const renderDocumentIssuanceEnd = (key) => {
+    const issuanceColumns = [];
+    for (let index = 0; index < issuance.history.length; index += 10) {
+      issuanceColumns.push(issuance.history.slice(index, index + 10));
+    }
+
+    return (
+      <div className="document-issuance-end" key={key}>
+        <div className="document-issuance-rule" />
+        <div className="document-issuance-title">End of Punch List</div>
+        <div className="document-issuance-lines">
+          {issuanceColumns.length > 0 ? (
+            issuanceColumns.map((records, columnIndex) => (
+              <div
+                className="document-issuance-column"
+                key={`issuance-column-${columnIndex}`}
+              >
+                {records.map((record) => {
+                  const title = getIssuanceTitle(record).trim();
+                  return (
+                    <div className="document-issuance-line" key={record.id}>
+                      {title ? `${title} issued` : "Issued"}{" "}
+                      {getCurrentDateLabel(new Date(record.issuedAt))}
+                    </div>
+                  );
+                })}
+              </div>
+            ))
+          ) : (
+            <div className="document-issuance-line document-issuance-line--draft">
+              Working draft · Print PDF &amp; issue to add the issued date.
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderDetailPage = (
     segments,
     pageIdx,
@@ -1857,11 +2431,23 @@ export default function PunchListApp() {
               ),
             }}
           >
-            {contentSegs.map((seg, segIdx) =>
-              seg.type === "rowGroup"
-                ? renderRowGroup(seg, `page-${pageIdx}-row-${segIdx}`)
-                : renderEmptySection(seg, `page-${pageIdx}-empty-${segIdx}`),
-            )}
+            {contentSegs.map((seg, segIdx) => {
+              if (seg.type === "rowGroup") {
+                return renderRowGroup(
+                  seg,
+                  `page-${pageIdx}-row-${segIdx}`,
+                );
+              }
+              if (seg.type === "issuanceEnd") {
+                return renderDocumentIssuanceEnd(
+                  `page-${pageIdx}-issuance-${segIdx}`,
+                );
+              }
+              return renderEmptySection(
+                seg,
+                `page-${pageIdx}-empty-${segIdx}`,
+              );
+            })}
           </div>
           {isLastDetailPage && (
             <button
@@ -1877,7 +2463,18 @@ export default function PunchListApp() {
   };
 
   return (
-    <div className={`app${sidebarOpen ? " app--sidebar-open" : ""}`}>
+    <div
+      className={[
+        "app",
+        sidebarOpen ? "app--sidebar-open" : "",
+        importOpen ? "app--import-open" : "",
+        data.isExample ? "app--example" : "",
+        issuance.locked ? "app--locked" : "",
+        printPreview ? "app--print-preview" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <ProjectSidebar
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen((value) => !value)}
@@ -1900,6 +2497,7 @@ export default function PunchListApp() {
         onLoadFromFile={handleLoadFromFile}
         onClear={handleClearAll}
         clearConfirm={clearConfirm}
+        readOnly={isReadOnly}
       />
 
       <div className="toolbar">
@@ -1907,11 +2505,22 @@ export default function PunchListApp() {
           <div className="toolbar-product">Punch List</div>
           <div className="toolbar-context">
             <span className="toolbar-document">
-              {data.project || "Untitled punch list"}
+              {data.project
+                ? `${data.project}${data.isExample ? " (Example)" : ""}`
+                : "Untitled punch list"}
             </span>
             <span className="toolbar-title">
-              {data.title || "Punch List"} <span aria-hidden="true">·</span>{" "}
-              {data.date || "No date"}
+              {data.isExample ? (
+                <>
+                  {data.projectNum} <span aria-hidden="true">·</span>{" "}
+                  {data.firm} <span aria-hidden="true">·</span> {data.date}
+                </>
+              ) : (
+                <>
+                  {data.title || "Punch List"}{" "}
+                  <span aria-hidden="true">·</span> {data.date || "No date"}
+                </>
+              )}
             </span>
           </div>
         </div>
@@ -1937,17 +2546,33 @@ export default function PunchListApp() {
           <button
             className="btn btn-secondary btn-import-top"
             onClick={() => {
-              setImportOpen((open) => !open);
-              setHelpOpen(false);
+              if (importOpen) {
+                setImportOpen(false);
+              } else {
+                handleOpenImport();
+              }
             }}
             title="Import notes"
+            aria-expanded={importOpen}
+            aria-controls="import-workspace"
+            disabled={isReadOnly}
           >
             <ImportIcon />
             Import notes
           </button>
-          <button className="btn btn-print" onClick={() => window.print()}>
+          <button
+            className="btn btn-secondary btn-issuance-jump"
+            onClick={handleJumpToIssuances}
+            type="button"
+          >
+            Issuances
+          </button>
+          <button
+            className="btn btn-print"
+            onClick={isReadOnly ? () => window.print() : handleIssueAndPrint}
+          >
             <DocumentIcon />
-            Print / PDF
+            {printButtonLabel}
           </button>
         </div>
       </div>
@@ -1966,13 +2591,13 @@ export default function PunchListApp() {
           </div>
           <div className="import-panel-body">
             <p className="help-intro">
-              Draft in the editor you already use. Punch List turns that outline
-              into a numbered photo document.
+              Draft in Word, Docs, Notes, or the text editor you already use.
+              Punch List turns that outline into a numbered photo document.
             </p>
             <ol className="help-steps">
               {[
                 <>
-                  <strong>Write your notes in Word, Notes, or another editor.</strong>{" "}
+                  <strong>Write your notes in Word, Docs, Notes, or another editor.</strong>{" "}
                   Make each room a top-level bullet and indent its items below.
                 </>,
                 <>
@@ -1984,8 +2609,9 @@ export default function PunchListApp() {
                   area or drag images in from a folder.
                 </>,
                 <>
-                  <strong>Print or save a PDF</strong> when the photo punch list
-                  is ready to share.
+                  <strong>Print PDF &amp; issue</strong> when the photo punch
+                  list is ready to share. That saves a dated snapshot and locks
+                  the issued version.
                 </>,
               ].map((text, i) => (
                 <li key={i}>
@@ -2015,14 +2641,38 @@ export default function PunchListApp() {
               the page. Re-importing numbered notes updates them without
               detaching their photos.
             </p>
+            <div className="help-issue-callout">
+              <strong>Issue, correct, and reissue</strong>
+              <span>
+                Print PDF &amp; issue saves a dated snapshot and locks the working
+                list. If you later catch an omission, use Issuances at the
+                bottom to unlock it, make the correction, and reissue. The
+                original issue stays in the record.
+              </span>
+            </div>
           </div>
         </div>
       )}
 
       {importOpen && (
-        <div className="import-panel">
+        <aside
+          className="import-panel import-workspace"
+          id="import-workspace"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby="import-workspace-title"
+        >
           <div className="import-panel-header">
-            <div className="import-panel-label">Import notes</div>
+            <div>
+              <div className="import-panel-label" id="import-workspace-title">
+                {data.isExample ? "Start your punch list" : "Import notes"}
+              </div>
+              <p className="import-panel-copy">
+                {data.isExample
+                  ? "Replace the practice outline with your notes, then build a new project."
+                  : "Review a long outline comfortably before merging it into this project."}
+              </p>
+            </div>
             <button
               className="import-close"
               onClick={() => setImportOpen(false)}
@@ -2033,24 +2683,98 @@ export default function PunchListApp() {
           </div>
 
           <div className="import-panel-body">
-            <p className="import-section-heading">Paste your notes</p>
-            <p className="import-helper import-helper--muted">
-              Paste the outline you wrote elsewhere. Room names are top-level
-              bullets; punch items are indented below. You can also load a Word
-              or text file.
-            </p>
-            <textarea
-              className="import-textarea"
-              value={importText}
-              onChange={(event) => {
-                setImportText(event.target.value);
-                setImportStatus("");
-              }}
-              onPaste={handleImportPaste}
-              placeholder="Paste your bulleted outline here..."
-              rows={6}
-            />
-            <div className="import-actions">
+            <div className="import-workspace-content">
+              <p className="import-section-heading">Paste your notes</p>
+              <p className="import-helper import-helper--muted">
+                Room names are top-level bullets; punch items are indented
+                below. Paste from Word, Docs, or Notes, or load a Word or text
+                file.
+              </p>
+              <OutlineEditor
+                ref={outlineEditorRef}
+                className="import-textarea import-outline-editor"
+                value={importText}
+                onChange={(value) => {
+                  setImportText(value);
+                  setImportStatus("");
+                }}
+                onStructuredPaste={handleStructuredImportPaste}
+                onShortcut={handleImportShortcut}
+                placeholder="Paste your bulleted outline here..."
+                ariaLabel="Punch list outline"
+              />
+              <div
+                className="import-format-toolbar"
+                role="group"
+                aria-label="Format selected punch item text"
+              >
+                <div className="import-format-toolbar-copy">
+                  <strong>Format selected text</strong>
+                  <span>Format one item or select across several.</span>
+                </div>
+                <div className="import-format-actions">
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => applyImportFormatting("bold", "bold")}
+                    aria-label="Bold selected text"
+                    aria-keyshortcuts="Control+B Meta+B"
+                    title="Bold · Ctrl+B"
+                  >
+                    <strong>B</strong>
+                    <kbd>Ctrl+B</kbd>
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() =>
+                      applyImportFormatting("underline", "underline")
+                    }
+                    aria-label="Underline selected text"
+                    aria-keyshortcuts="Control+U Meta+U"
+                    title="Underline · Ctrl+U"
+                  >
+                    <span className="import-format-underline">U</span>
+                    <kbd>Ctrl+U</kbd>
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() =>
+                      applyImportFormatting("strikeThrough", "strikethrough")
+                    }
+                    aria-label="Strikethrough selected text"
+                    aria-keyshortcuts="Control+Shift+X Meta+Shift+X"
+                    title="Strikethrough · Ctrl+Shift+X"
+                  >
+                    <span className="import-format-strike">S</span>
+                    <kbd>Ctrl+Shift+X</kbd>
+                  </button>
+                </div>
+              </div>
+              {importStatus && (
+                <div className="import-status" role="status" aria-live="polite">
+                  {importStatus}
+                </div>
+              )}
+              <div className="formatting-primer">
+                <div className="formatting-primer-title">Formatting primer</div>
+                <ul>
+                  <li>
+                    Load .docx, .md/.markdown, or .txt notes with Load notes
+                    file below.
+                  </li>
+                  <li>Top-level bullets are rooms or areas.</li>
+                  <li>Indented bullets become punch items.</li>
+                  <li>Select across several items to format them together.</li>
+                  <li>Underline marks new; bold marks revised; strike marks complete.</li>
+                  <li>Re-importing numbered notes keeps their photos attached.</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="import-workspace-footer">
+              <div className="import-actions">
               <label className="import-file-btn">
                 <svg
                   className="import-file-icon"
@@ -2072,31 +2796,49 @@ export default function PunchListApp() {
                   hidden
                 />
               </label>
-              <button className="btn btn-import" onClick={handleImportSubmit}>
+              <button
+                className="btn btn-import"
+                onClick={handleImportSubmit}
+                disabled={!importText.trim()}
+              >
                 <ImportIcon />
                 Import & build punch list
               </button>
+              </div>
             </div>
-            {importStatus && (
-              <div className="import-status">{importStatus}</div>
-            )}
-            <details className="import-format-details">
-              <summary>See a formatting example</summary>
-              <pre className="import-example">{`- Study 410
-    - Install smoke/CO detector
-    - Drop shelves
-- Kitchen 102
-    - Adjust cabinet reveal`}</pre>
-              <p className="import-helper import-helper--muted">
-                Site Conditions and General Notes can also be top-level bullets.
-                Matching numbered items are updated and keep their photos.
-              </p>
-            </details>
           </div>
-        </div>
+        </aside>
       )}
 
-      <div className="pages">
+      {data.isExample && (
+        <section className="example-banner" aria-label="Example project notice">
+          <div className="example-banner-details">
+            <span className="example-banner-icon" aria-hidden="true">
+              <HelpIcon />
+            </span>
+            <div className="example-banner-copy">
+              <strong>You're viewing an example</strong>
+              <span>
+                Explore freely. Changes stay in this practice project and never
+                affect your real punch lists.
+              </span>
+            </div>
+          </div>
+          <button
+            className="btn btn-import example-banner-action"
+            onClick={handleOpenImport}
+            type="button"
+          >
+            Start your punch list
+          </button>
+        </section>
+      )}
+
+      <div
+        className="pages"
+        inert={isReadOnly ? true : undefined}
+        aria-disabled={isReadOnly || undefined}
+      >
         {pages.map((page, pageIdx) =>
           page.kind === "summary"
             ? renderSummaryPage(page.segments, pageIdx, pages.length)
@@ -2128,8 +2870,9 @@ export default function PunchListApp() {
             <div className="empty-state-kicker">Recommended workflow</div>
             <h2 className="empty-state-heading">Write elsewhere. Import here.</h2>
             <p className="empty-state-body">
-              Draft in Word, Notes, or any editor that makes writing easy. Use a
-              bullet for each room and indent the punch items below it.
+              Draft in Word, Docs, Notes, or any text editor that makes writing
+              easy. Use a bullet for each room and indent the punch items below
+              it.
             </p>
             <pre className="empty-state-example">{`- Kitchen 102
     - Adjust cabinet reveal
@@ -2142,10 +2885,7 @@ export default function PunchListApp() {
             <div className="empty-state-actions">
               <button
                 className="btn btn-import empty-state-btn"
-                onClick={() => {
-                  setImportOpen(true);
-                  setHelpOpen(false);
-                }}
+                onClick={handleOpenImport}
               >
                 <ImportIcon />
                 Import notes
@@ -2164,6 +2904,167 @@ export default function PunchListApp() {
           </div>
         )}
       </div>
+
+      <section
+        className="issuance-footer"
+        id="issuance-record"
+        ref={issuanceFooterRef}
+        aria-labelledby="issuances-title"
+      >
+        <div className="issuance-footer-main">
+          <div className="issuance-heading-block">
+            <h2 id="issuances-title">Issuances</h2>
+          </div>
+          <div className="issuance-status-copy">
+            {printPreview ? (
+              <>
+                <strong>
+                  Preparing {getIssuanceTitle(printPreview.record) || "issued copy"}{" "}
+                  for reprint.
+                </strong>
+                <span>
+                  The working list should return when printing closes. You can
+                  also return to it manually.
+                </span>
+              </>
+            ) : issuance.locked && latestIssue ? (
+              <>
+                <strong>This punch list is issued and locked.</strong>
+                <span>
+                  {getIssuanceTitle(latestIssue) || "Untitled issuance"} · Issued{" "}
+                  {getIssuedDateLabel(latestIssue.issuedAt)}. Reprint it, start
+                  the next punch list, or unlock to make a small correction.
+                </span>
+              </>
+            ) : issuance.draftMode === "correction" && latestIssue ? (
+              <>
+                <strong>Correction draft is open.</strong>
+                <span>
+                  Make the change, then Print PDF &amp; issue. The earlier issued
+                  copy stays in the record.
+                </span>
+              </>
+            ) : issuance.history.length > 0 ? (
+              <>
+                <strong>Next punch list issue is open.</strong>
+                <span>
+                  Issuing preserves every prior snapshot and locks this working
+                  list.
+                </span>
+              </>
+            ) : (
+              <>
+                <strong>This punch list is a working draft.</strong>
+                <span>
+                  Print PDF &amp; issue saves a dated snapshot and locks the project
+                  against accidental edits.
+                </span>
+              </>
+            )}
+            {!printPreview && !issuance.locked && (
+              <label className="issuance-title-field">
+                <span>Issuance title (optional)</span>
+                <input
+                  value={draftIssuanceTitle}
+                  onChange={(event) =>
+                    dispatch({
+                      type: "setIssuance",
+                      issuance: { draftTitle: event.target.value },
+                    })
+                  }
+                  placeholder="Leave blank for no title"
+                />
+              </label>
+            )}
+          </div>
+          <div className="issuance-actions">
+            {printPreview ? (
+              <button
+                className="btn btn-secondary"
+                onClick={handleReturnFromPrintPreview}
+                type="button"
+              >
+                Return to working list
+              </button>
+            ) : issuance.locked && latestIssue ? (
+              <>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleUnlockForCorrection}
+                  type="button"
+                >
+                  Unlock to correct
+                </button>
+                <button
+                  className="btn btn-print"
+                  onClick={handleStartNextIssue}
+                  type="button"
+                >
+                  Start next issue
+                </button>
+              </>
+            ) : (
+              <button
+                className="btn btn-print"
+                onClick={handleIssueAndPrint}
+                type="button"
+              >
+                {printButtonLabel}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {issuance.history.length > 0 && (
+          <div className="issuance-history" aria-label="Issued snapshots">
+            {[...issuance.history].reverse().map((record) => {
+              const superseded = issuance.history.some(
+                (entry) => entry.supersedesId === record.id,
+              );
+              const isCurrent =
+                issuance.locked && latestIssue?.id === record.id;
+
+              return (
+                <div className="issuance-row" key={record.id}>
+                  <div className="issuance-row-title">
+                    <input
+                      className="issuance-row-title-input"
+                      value={getIssuanceTitle(record)}
+                      onChange={(event) =>
+                        handleSetIssuanceTitle(record.id, event.target.value)
+                      }
+                      placeholder="Optional issuance title"
+                      aria-label={`Issuance title for ${getIssuedDateLabel(record.issuedAt)}`}
+                      disabled={Boolean(printPreview)}
+                    />
+                    <span>
+                      {isCurrent
+                        ? "Current locked issue"
+                        : superseded
+                          ? "Superseded by later issuance"
+                          : "Saved snapshot"}
+                    </span>
+                  </div>
+                  <div className="issuance-row-meta">
+                    <span>{getIssuedDateLabel(record.issuedAt)}</span>
+                    <span>
+                      {record.itemCount ?? 0} items · {record.photoCount ?? 0}{" "}
+                      photos
+                    </span>
+                  </div>
+                  <button
+                    className="issuance-reprint-btn"
+                    onClick={() => handlePrintHistoricalIssue(record)}
+                    type="button"
+                  >
+                    Reprint
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
