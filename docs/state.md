@@ -2,7 +2,7 @@
 _Last updated: 2026-08-06_
 
 ## Current focus
-Maintain the release-ready import-to-issued-PDF workflow with predictable numbering, formatting, and correction history.
+Maintain the release-ready import-to-issued-PDF workflow with predictable numbering, formatting, correction history, and reliable GitHub Pages publishing from `master`.
 
 ## What's working
 - The local Vite/React app passes `npm.cmd run lint` and `npm.cmd run build`.
@@ -20,12 +20,13 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 - Document Settings includes `Show issuances`; turning it off keeps `End of Punch List` but hides its dated history. Existing projects default to showing the history.
 - The screen-only Issuances workspace remains at the bottom with a toolbar jump action, lock/correction controls, editable titles, dates, counts, and Reprint.
 - Sidebar and Import Notes states keep the Issuances workspace aligned with the document.
-- GitHub Pages publishes the production build from `main` at `https://blakehecksher.github.io/Punchlist/`.
+- GitHub Pages publishes the production build from `master` through the native GitHub Actions Pages deployment at `https://blakehecksher.github.io/Punchlist/`.
 
 ## In progress
 - Remaining release-readiness improvements: Print/PDF metadata preflight, destructive-action recovery, local-save/backup messaging, and a stronger existing-project import-success handoff.
 
 ## Known issues
+- The legacy `gh-pages` branch remains in the repository for deployment history but is no longer used by the GitHub Actions Pages source.
 - Item codes in the working draft are derived from the current room name; each issued snapshot is stable, but the live code can change before the next issuance.
 - Bold and strikethrough still influence revised/completed counts; explicit lifecycle state is not implemented.
 - Re-import can remove missing working items, and direct item/room removal has no visible recovery path. Issued snapshots remain intact.
@@ -35,9 +36,9 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 - The rich outline editor relies on the browser's content-editing command support for formatting.
 
 ## Next actions
-1. Add a short issue preflight for blank project metadata and optional issuance notes.
-2. Add undo/recovery for removed rooms and items, plus review before re-import removes missing items.
-3. Add a short in-app reminder that work is saved only in this browser unless a backup is downloaded.
+1. Confirm the first `master`-triggered GitHub Actions Pages run completes and the live URL updates.
+2. Add a short issue preflight for blank project metadata and optional issuance notes.
+3. Add undo/recovery for removed rooms and items, plus review before re-import removes missing items.
 
 ## How to verify
 ```text
@@ -53,6 +54,7 @@ git -c safe.directory='G:/Files/Github/Punchlist' status --short --branch
 ```
 
 ## Recent logs
+- docs/log/2026-08-06 0942 Restore master GitHub Pages deployment.md - restored native GitHub Actions Pages publishing from master after the main/gh-pages mismatch.
 - docs/log/2026-08-06 0907 Publish main to GitHub Pages.md - moved the release branch to main and configured the verified production build for GitHub Pages.
 - docs/log/2026-08-06 0836 Optional issuance history and ending flow.md - added the Show issuances setting and made the document ending occupy the next available row.
 - docs/log/2026-08-06 0052 Parser semantics and document ending.md - added GEN/EXT aliases, baseline new-item logic, safe multi-line formatting, formatted-heading parsing, and the left-aligned multi-column issuance ending.
