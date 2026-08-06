@@ -36,7 +36,7 @@ jobs:
           script: |
             const deployment = '613e211bd5bf628898a38635ce1dccf8b2205745'
             try {
-              await github.rest.repos.cancelPagesDeployment({
+              await github.request('POST /repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}/cancel', {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pages_deployment_id: deployment,
