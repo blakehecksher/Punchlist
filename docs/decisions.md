@@ -16,6 +16,8 @@ One entry per decision. Format: **what**, why, date. Exists to prevent re-litiga
 
 **ROWS_PAGE_1 = 2, ROWS_OTHER = 3** - page 1 has site conditions which consume about one row of vertical space. Other pages only have the compact document header. These values are easy to tune. 2026-03-11
 
+**Site-condition first page = one item row or none** - when site conditions are rendered on a detail page, the first page may carry one punch-list row (two cards) at most. If more than six site-condition rows are present, the first page is reserved for site conditions and punch-list items begin on the following page. This supersedes the earlier fixed two-row first-page behavior. 2026-08-11
+
 **background-image for photos (not `<img>` + `object-fit: cover`)** - `object-fit: cover` on an `<img>` only pans along the cropped axis, making it impossible to reposition landscape photos in portrait cells. `background-image` with `background-size` and `background-position` gives full two-axis panning at any zoom level. 2026-03-11
 
 **useReducer (not useState) for app state** - the original had many nested `setData(...)` update paths. A reducer with named actions is cleaner, and a `mapItem` helper finds items by ID across general notes and rooms without repeating the nested map logic. 2026-03-11
@@ -59,3 +61,7 @@ One entry per decision. Format: **what**, why, date. Exists to prevent re-litiga
 **Rich formatting may span several outline items** - the editor no longer enforces one-item selections. Formatting is serialized as balanced markup on each line, and formatting around a bullet or section heading is normalized before structural parsing so visual styling cannot corrupt the room/item hierarchy. 2026-08-06
 
 **The document ending flows as one normal row and its history is optional** - `End of Punch List` consumes the next available full-width row instead of pinning itself to the page bottom. Document Settings may hide the dated issuance lines, but the ending title and the screen-only issuance workflow remain available. Older saved projects show the history by default. 2026-08-06
+
+**PDF preview is consequence-free; formal issuance is an explicit record** - Preview / Print PDF never locks the project or creates history. Record as issued deliberately creates the immutable snapshot. If the latest copy was not distributed, it may be reopened and replaced; if it was distributed, the next change must be a formal correction. Issued snapshots remain children of the living project in the sidebar so historical navigation does not compete with project navigation. This refines the earlier locked-issue decision without weakening snapshot immutability. 2026-08-12
+
+**Any selected issuance may be edited directly or used to create a correction** - the app does not decide whether a prior PDF must remain immutable based on distribution. Fix issued version applies to the snapshot the user selected, including older versions. Edit this issued version replaces that stored snapshot in place while preserving its ID, date, number, and history position; Create correction from this version preserves the snapshot and opens a correction based on it. This supersedes the distribution-gated replacement rule above. 2026-08-12

@@ -74,7 +74,7 @@ function rotateImage(dataUrl) {
  */
 const DEFAULT_POS = { scale: 1, x: 50, y: 50 };
 
-export default function PhotoCell({ projectId, itemId, issueCode, photo, position, onPhoto, onRemove, onPositionChange }) {
+export default function PhotoCell({ projectId, itemId, issueCode, photo, position, onPhoto, onRemove, onPositionChange, persistToProject = true }) {
   const [dragOver, setDragOver] = useState(false);
   const [pos, setPos] = useState(position ?? DEFAULT_POS);
   const [photoKey, setPhotoKey] = useState(photo);
@@ -124,8 +124,10 @@ export default function PhotoCell({ projectId, itemId, issueCode, photo, positio
       return;
     }
     onPhoto(dataUrl, DEFAULT_POS);
-    idbSetPhoto(projectId, itemId, { dataUrl, position: DEFAULT_POS }).catch(() => {});
-  }, [projectId, itemId, onPhoto]);
+    if (persistToProject) {
+      idbSetPhoto(projectId, itemId, { dataUrl, position: DEFAULT_POS }).catch(() => {});
+    }
+  }, [projectId, itemId, onPhoto, persistToProject]);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
@@ -184,8 +186,8 @@ export default function PhotoCell({ projectId, itemId, issueCode, photo, positio
   const handleRemove = useCallback((e) => {
     e.stopPropagation();
     onRemove();
-    idbDeletePhoto(projectId, itemId).catch(() => {});
-  }, [projectId, itemId, onRemove]);
+    if (persistToProject) idbDeletePhoto(projectId, itemId).catch(() => {});
+  }, [projectId, itemId, onRemove, persistToProject]);
 
   const handleRotate = useCallback(async (e) => {
     e.stopPropagation();
@@ -194,13 +196,15 @@ export default function PhotoCell({ projectId, itemId, issueCode, photo, positio
     try {
       const rotatedDataUrl = await rotateImage(photo);
       onPhoto(rotatedDataUrl, pos);
-      await idbSetPhoto(projectId, itemId, { dataUrl: rotatedDataUrl, position: pos });
+      if (persistToProject) {
+        await idbSetPhoto(projectId, itemId, { dataUrl: rotatedDataUrl, position: pos });
+      }
     } catch {
       // Keep the current image if the browser cannot rotate it.
     } finally {
       setIsRotating(false);
     }
-  }, [photo, isRotating, onPhoto, pos, projectId, itemId]);
+  }, [photo, isRotating, onPhoto, pos, projectId, itemId, persistToProject]);
 
   const handleZoomIn = useCallback((e) => {
     e.stopPropagation();

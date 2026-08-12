@@ -11,6 +11,7 @@ export default function ItemCard({
   onPhoto,
   onRemove,
   onPositionChange,
+  persistPhotos = true,
 }) {
   const cardClass = ["item-card", `item-card--${density}`].join(" ");
 
@@ -45,6 +46,7 @@ export default function ItemCard({
         onPhoto={onPhoto}
         onRemove={() => onPhoto(null, null)}
         onPositionChange={onPositionChange}
+        persistToProject={persistPhotos}
       />
     </div>
   );
