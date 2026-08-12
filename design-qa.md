@@ -1,52 +1,38 @@
-# Design QA
+# Design QA: Issued versions in the project sidebar
 
-## Evidence
-- Source visual truth: `docs/design/2026-08-06-end-reference.png`
-- Initial implementation: `docs/design/2026-08-06-end-implementation-before.png`
-- Final implementation: `docs/design/2026-08-06-end-implementation.png`
-- Same-frame comparison: `docs/design/2026-08-06-end-comparison.png`
-- Source pixels: 1008 x 393.
-- Implementation pixels and CSS viewport: 1265 x 712 at device density 1.
-- Normalization: both captures were proportionally fit to 900-pixel comparison panels without cropping.
-- State: final detail page with two saved issuance records; screen-only editing controls remain visible outside the print area.
+## Visual truth and implementation
+
+- Source: `C:\Users\blake\AppData\Local\Temp\codex-clipboard-ba80349b-ec70-4c45-a69c-466ad028f1f4.png`
+- Implementation: `C:\Users\blake\.codex\visualizations\2026\08\12\019ff415-52f7-7dd1-b0a3-af785c4226ff\issuance-audit\07-sidebar-final-1119x920.png`
+- Selected-issuance edit state: `C:\Users\blake\.codex\visualizations\2026\08\12\019ff415-52f7-7dd1-b0a3-af785c4226ff\issuance-audit\09-edit-selected-issuance.png`
+- Combined comparison input: `C:\Users\blake\.codex\visualizations\2026\08\12\019ff415-52f7-7dd1-b0a3-af785c4226ff\issuance-audit\08-sidebar-comparison.png`
+- Viewport: 1119 x 920 CSS pixels at desktop density.
+- State: active `925 Park Avenue, Apt 3-4A` project, sidebar expanded, three issued versions visible, correction working draft open near the document ending.
 
 ## Findings
-- P0 blockers: 0.
-- P1 major mismatches: 0.
-- P2 material mismatches: 0.
-- P3 polish: the live implementation retains the product's established document typefaces and lighter gray rule rather than treating the orange markup in the source as visual styling. This is intentional; the markup describes placement only.
 
-## Required fidelity surfaces
-- Fonts and typography: the existing Inter heading and Source Serif issuance line preserve the document system. Weight, case, and hierarchy remain readable at print scale.
-- Spacing and layout rhythm: the record now begins at the top-left of its reserved row, the rule spans the complete inner width, and issuance lines use a consistent 24-pixel indent. Ten entries fill the first column before a second column begins.
-- Colors and visual tokens: the existing ink, muted rule, paper, and border colors remain unchanged and meet the monochrome document language.
-- Image quality and assets: this component contains no raster imagery, logos, or custom icon assets. No placeholders or approximated assets were introduced.
-- Copy and content: `End of Punch List` and the issued title/date format match the requested document language.
+- P0: none.
+- P1: none.
+- P2: none.
+- The implemented project hierarchy occupies the three annotated sidebar slots and uses the product's existing typography, border, spacing, and grayscale palette.
+- The latest issuance is visibly marked; issued dates remain secondary to titles.
+- The source did not specify child-row copy, so the implementation adds a quiet `Issued versions` label and real snapshot titles/dates while preserving the intended indentation.
+- The bottom Issuances workspace remains aligned with the document and is visually compact; detailed management is collapsed by default.
+- Direct-edit mode clearly names the selected issuance in a fixed banner and repeats the Save/Cancel actions in the Issuances workspace.
 
-## Interaction review
-- GEN and EXT item prefixes render in the live document.
-- A clean first import reports zero new items, while later-issuance imports can still mark new work.
-- Formatted General and Exterior headings parse as section names instead of becoming malformed rooms.
-- Multi-item formatting no longer rejects a selection containing line breaks, and serialized formatting is balanced per line so bullets remain parseable.
-- The `Show issuances` checkbox hides the dated print-history lines while preserving the `End of Punch List` title and the screen-only Issuances workspace.
-- The ending follows the last item row with no automatic top margin, so a new ending-only page starts in its first row rather than its second.
-- Browser console errors: none.
-- `npm.cmd run lint`: passed.
-- `npm.cmd run build`: passed.
+## Required surface check
 
-## Comparison history
-1. Initial P2: the issuance record was centered vertically and horizontally, with a short centered rule. This contradicted the annotated source's top-left placement and full-width line.
-2. Fix: changed the record to top-left alignment, extended the rule across the container, indented the issuance entries, and split history into columns of ten.
-3. Post-fix evidence: `docs/design/2026-08-06-end-comparison.png` shows the requested placement, width, and hierarchy with no remaining P0/P1/P2 mismatch.
-4. Follow-up comparison against the annotated blank-row screenshot confirmed the ending now occupies the next available row instead of being pushed to the page bottom.
+- Typography: existing sans-serif sidebar system and serif document title preserved.
+- Spacing: project row, child indentation, vertical hierarchy rule, and workspace gutters are consistent with the source layout.
+- Colors: existing black, white, and neutral gray tokens only.
+- Assets and image quality: existing photo assets and interface icons are unchanged and render cleanly.
+- Copy: `Preview / Print PDF`, `Record as issued`, `Edit this issued version`, and `Create correction from this version` state the consequence of each action directly.
+- Focused-region comparison: not required; the sidebar and issuance controls are readable at the matched full viewport.
 
-## Implementation checklist
-- [x] Top-left document ending.
-- [x] Full-width rule.
-- [x] Indented issuance entries.
-- [x] Two-column capacity for twenty issuances.
-- [x] Existing print geometry preserved.
-- [x] Optional dated issuance lines with persistent default-on behavior.
-- [x] Natural next-row placement without bottom pinning.
+## Verification
+
+- Core navigation, older-snapshot selection, direct-edit mode, cancel-without-saving, return-to-current, Reprint, and compact history disclosure were exercised in the in-app browser.
+- Fresh reload produced no new console errors or warnings.
+- `npm test`, `npm.cmd run lint`, `npm.cmd run build`, and `git diff --check` passed.
 
 final result: passed

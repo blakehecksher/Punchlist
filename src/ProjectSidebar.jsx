@@ -52,6 +52,11 @@ export default function ProjectSidebar({
   onClear,
   clearConfirm,
   readOnly = false,
+  issuedSnapshots = [],
+  activeSnapshotId = null,
+  onOpenSnapshot,
+  onReturnToWorking,
+  snapshotNavigationDisabled = false,
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [documentSort, setDocumentSort] = useState("date");
@@ -140,14 +145,20 @@ export default function ProjectSidebar({
             const isConfirming = deleteConfirm === proj.id;
             const projectName = proj.name || "Untitled punch list";
             return (
-              <div
-                key={proj.id}
-                className={`sidebar-item${isActive ? " sidebar-item--active" : ""}`}
-              >
+              <div className="sidebar-project-group" key={proj.id}>
+                <div
+                  className={`sidebar-item${isActive ? " sidebar-item--active" : ""}`}
+                >
                 <button
                   className="sidebar-item-btn"
-                  onClick={() => !isActive && onOpen(proj.id)}
-                  disabled={isActive}
+                  onClick={() => {
+                    if (isActive && activeSnapshotId) {
+                      onReturnToWorking?.();
+                    } else if (!isActive) {
+                      onOpen(proj.id);
+                    }
+                  }}
+                  disabled={isActive && !activeSnapshotId}
                   type="button"
                 >
                   <span className="sidebar-item-name">{projectName}</span>
@@ -172,6 +183,39 @@ export default function ProjectSidebar({
                     {isConfirming ? "?" : <TrashIcon />}
                   </span>
                 </button>
+                </div>
+
+                {isActive && issuedSnapshots.length > 0 && (
+                  <div className="sidebar-snapshots" aria-label="Issued versions">
+                    <div className="sidebar-snapshots-heading">Issued versions</div>
+                    {issuedSnapshots.map((record, index) => {
+                      const isSelected = record.id === activeSnapshotId;
+                      const isLatest = index === issuedSnapshots.length - 1;
+                      return (
+                        <button
+                          className={`sidebar-snapshot${isSelected ? " sidebar-snapshot--active" : ""}`}
+                          key={record.id}
+                          onClick={() => onOpenSnapshot?.(record)}
+                          type="button"
+                          disabled={snapshotNavigationDisabled}
+                          aria-current={isSelected ? "page" : undefined}
+                        >
+                          <span className="sidebar-snapshot-line">
+                            <span className="sidebar-snapshot-name">
+                              {record.displayTitle || "Untitled issuance"}
+                            </span>
+                            {isLatest && (
+                              <span className="sidebar-snapshot-badge">Latest</span>
+                            )}
+                          </span>
+                          <span className="sidebar-snapshot-meta">
+                            Issued {record.displayDate || "Date unavailable"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
