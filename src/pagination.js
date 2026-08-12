@@ -3,6 +3,11 @@ import { getLayoutMetrics } from "./layout.js";
 export const GENERAL_NOTES_SECTION_ID = "__general_notes__";
 export const SUMMARY_ROWS_FIRST = 20;
 export const SUMMARY_ROWS_OTHER = 30;
+// Site conditions share the first detail page with the punch-list cards when
+// they are short. Keep that page to one item row (two cards) so the cards do
+// not compete with a second row for the remaining vertical space.
+export const MAX_SITE_CONDITIONS_WITH_FIRST_PAGE_ITEMS = 6;
+export const FIRST_PAGE_ROWS_WITH_SITE_CONDITIONS = 1;
 const SUMMARY_DESC_CHARS_PER_LINE = 125;
 const MAX_SUMMARY_LINE_SPAN = 3;
 
@@ -95,11 +100,26 @@ export function paginateSummary(entries) {
   return pages;
 }
 
+export function getFirstPageItemRows(siteConditions, defaultRows) {
+  if (!Array.isArray(siteConditions) || siteConditions.length === 0) {
+    return defaultRows;
+  }
+
+  return siteConditions.length > MAX_SITE_CONDITIONS_WITH_FIRST_PAGE_ITEMS
+    ? 0
+    : FIRST_PAGE_ROWS_WITH_SITE_CONDITIONS;
+}
+
 export function paginateDetail(data, layout, options = {}) {
-  const { columns, firstPageRows, otherPageRows } = getLayoutMetrics(layout);
+  const { columns, firstPageRows: defaultFirstPageRows, otherPageRows } =
+    getLayoutMetrics(layout);
   const { includeSiteConditions = true, includeIssuanceEnd = false } = options;
   const pages = [];
   const sections = buildSections(data);
+  const firstPageRows = includeSiteConditions
+    ? getFirstPageItemRows(data.siteConditions, defaultFirstPageRows)
+    : defaultFirstPageRows;
+  const hasPunchItems = sections.some((section) => section.items.length > 0);
 
   let isFirstPage = true;
   let rowsUsed = 0;
@@ -128,6 +148,13 @@ export function paginateDetail(data, layout, options = {}) {
     rowsUsed += 1;
     openRowGroup = null;
   };
+
+  // A long site-condition list gets a page of its own. Starting the item
+  // loop after this flush keeps the first page intentionally free of cards;
+  // otherwise flexbox would shrink the cards to whatever space remains.
+  if (includeSiteConditions && firstPageRows === 0 && hasPunchItems) {
+    flushPage();
+  }
 
   sections.forEach((section) => {
     if (section.items.length === 0) {

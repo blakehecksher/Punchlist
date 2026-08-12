@@ -16,6 +16,8 @@ One entry per decision. Format: **what**, why, date. Exists to prevent re-litiga
 
 **ROWS_PAGE_1 = 2, ROWS_OTHER = 3** - page 1 has site conditions which consume about one row of vertical space. Other pages only have the compact document header. These values are easy to tune. 2026-03-11
 
+**Site-condition first page = one item row or none** - when site conditions are rendered on a detail page, the first page may carry one punch-list row (two cards) at most. If more than six site-condition rows are present, the first page is reserved for site conditions and punch-list items begin on the following page. This supersedes the earlier fixed two-row first-page behavior. 2026-08-11
+
 **background-image for photos (not `<img>` + `object-fit: cover`)** - `object-fit: cover` on an `<img>` only pans along the cropped axis, making it impossible to reposition landscape photos in portrait cells. `background-image` with `background-size` and `background-position` gives full two-axis panning at any zoom level. 2026-03-11
 
 **useReducer (not useState) for app state** - the original had many nested `setData(...)` update paths. A reducer with named actions is cleaner, and a `mapItem` helper finds items by ID across general notes and rooms without repeating the nested map logic. 2026-03-11

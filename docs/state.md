@@ -1,12 +1,19 @@
 # State
-_Last updated: 2026-08-06_
+_Last updated: 2026-08-11_
 
 ## Current focus
 Maintain the release-ready import-to-issued-PDF workflow with predictable numbering, formatting, correction history, and reliable GitHub Pages publishing from `master`.
 
 ## What's working
 - The local Vite/React app passes `npm.cmd run lint` and `npm.cmd run build`.
+- `npm test` now runs a fast Node test suite covering numbered imports,
+  first-page pagination, and browser-storage round trips.
 - Detail pages use one fixed four-card (2 x 2) layout; older saved six-card layouts migrate automatically.
+- When site conditions are shown on a detail page, page one carries one item
+  row (two cards) at most; more than six conditions get a site-conditions-only
+  page and start punch-list items on page two.
+- The importer accepts numeric markers such as `1.` and `1)` in both named
+  sections and nested room outlines, in addition to bullet markers.
 - General items use `GEN-NN`; an unnumbered Exterior section uses `EXT-NN`. Old `GN`, `000`, and `RM` exports still match during re-import.
 - A clean first import is treated as the baseline and shows zero new items. Opening a correction or the next issuance clears prior new markers; items added afterward can be underlined as new.
 - Import Notes displays Bold, Underline, and Strikethrough directly in the editor and document through the toolbar or Ctrl+B, Ctrl+U, and Ctrl+Shift+X.
@@ -25,7 +32,9 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 - The full rerun of Actions run 15 succeeded after the manual Pages reset; the public URL now serves the fresh build from `master`.
 
 ## In progress
-- Remaining release-readiness improvements: Print/PDF metadata preflight, destructive-action recovery, local-save/backup messaging, and a stronger existing-project import-success handoff.
+- Remaining release-readiness improvements: browser smoke/print regression
+  tests, Print/PDF metadata preflight, destructive-action recovery, local-save/
+  backup messaging, and a stronger existing-project import-success handoff.
 
 ## Known issues
 - The legacy `gh-pages` branch remains in the repository for deployment history but is no longer used by the GitHub Actions Pages source.
@@ -33,18 +42,22 @@ Maintain the release-ready import-to-issued-PDF workflow with predictable number
 - Item codes in the working draft are derived from the current room name; each issued snapshot is stable, but the live code can change before the next issuance.
 - Bold and strikethrough still influence revised/completed counts; explicit lifecycle state is not implemented.
 - Re-import can remove missing working items, and direct item/room removal has no visible recovery path. Issued snapshots remain intact.
+- App updates preserve the current localStorage and IndexedDB keys, but project
+  data is browser-local and can still disappear if a user clears browser data
+  or changes devices without exporting a backup.
 - Print/PDF can still be issued with blank project metadata; there is no short preflight yet.
 - Local-only persistence and the importance of downloading a backup are not explained prominently.
 - `paginateDetail` does not charge empty sections against the page row budget.
 - The rich outline editor relies on the browser's content-editing command support for formatting.
 
 ## Next actions
-1. On the next application change, push `master` and confirm the native Pages workflow completes normally.
+1. Add a browser smoke/print regression suite for persistence, photos, issue snapshots, and long site-condition pages.
 2. Add a short issue preflight for blank project metadata and optional issuance notes.
 3. Add undo/recovery for removed rooms and items, plus review before re-import removes missing items.
 
 ## How to verify
 ```text
+npm test
 npm.cmd run lint
 npm.cmd run build
 Import General and Exterior into a clean project; confirm GEN-01, EXT-01, and 0 new.
@@ -57,6 +70,7 @@ git -c safe.directory='G:/Files/Github/Punchlist' status --short --branch
 ```
 
 ## Recent logs
+- docs/log/2026-08-11 1600 Testing pagination and numbered import.md - added the initial automated test layer, protected the first detail page from oversized site-condition lists, and documented numbered-list imports.
 - docs/log/2026-08-06 1133 GitHub Pages rerun succeeded.md - reran the complete master workflow after the manual Pages reset and verified the live site updated.
 - docs/log/2026-08-06 1034 GitHub Pages stale deployment lock.md - confirmed the clean master workflow succeeds through artifact upload but GitHub's Pages deployment records remain stuck in progress.
 - docs/log/2026-08-06 1017 Reset Pages source and remove temporary hooks.md - reset Pages metadata to workflow/master and removed the one-time remediation hooks.

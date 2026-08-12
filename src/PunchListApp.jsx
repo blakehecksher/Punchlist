@@ -2402,6 +2402,17 @@ export default function PunchListApp() {
     const contentSegs = segments.filter(
       (seg) => seg.type !== "header" && seg.type !== "siteConditions",
     );
+    const hasSiteConditions = headerSegs.some(
+      (seg) => seg.type === "siteConditions",
+    );
+    const contentRows = hasSiteConditions
+      ? Math.max(
+          1,
+          contentSegs.filter(
+            (seg) => seg.type === "rowGroup" || seg.type === "issuanceEnd",
+          ).length,
+        )
+      : layoutMetrics.otherPageRows;
     const showInlineSummaryCount =
       summaryPages.length === 0 && pageIdx === 0 && contentSegs.length > 0;
 
@@ -2426,11 +2437,7 @@ export default function PunchListApp() {
             className="page-content-body"
             style={{
               "--grid-cols": String(layoutMetrics.columns),
-              "--content-rows": String(
-                headerSegs.some((seg) => seg.type === "siteConditions")
-                  ? layoutMetrics.firstPageRows
-                  : layoutMetrics.otherPageRows,
-              ),
+              "--content-rows": String(contentRows),
             }}
           >
             {contentSegs.map((seg, segIdx) => {
@@ -2702,7 +2709,7 @@ export default function PunchListApp() {
                 }}
                 onStructuredPaste={handleStructuredImportPaste}
                 onShortcut={handleImportShortcut}
-                placeholder="Paste your bulleted outline here..."
+                placeholder="Paste your bulleted or numbered outline here..."
                 ariaLabel="Punch list outline"
               />
               <div
@@ -2766,8 +2773,8 @@ export default function PunchListApp() {
                     Load .docx, .md/.markdown, or .txt notes with Load notes
                     file below.
                   </li>
-                  <li>Top-level bullets are rooms or areas.</li>
-                  <li>Indented bullets become punch items.</li>
+                  <li>Top-level bullets or numbered lines are rooms or areas.</li>
+                  <li>Indented bullets or numbered lines become punch items.</li>
                   <li>Select across several items to format them together.</li>
                   <li>Underline marks new; bold marks revised; strike marks complete.</li>
                   <li>Re-importing numbered notes keeps their photos attached.</li>
@@ -2873,14 +2880,14 @@ export default function PunchListApp() {
             <h2 className="empty-state-heading">Write elsewhere. Import here.</h2>
             <p className="empty-state-body">
               Draft in Word, Docs, Notes, or any text editor that makes writing
-              easy. Use a bullet for each room and indent the punch items below
-              it.
+              easy. Use a bullet or number for each room and indent the punch
+              items below it.
             </p>
-            <pre className="empty-state-example">{`- Kitchen 102
-    - Adjust cabinet reveal
-    - Touch up paint at window return`}</pre>
+            <pre className="empty-state-example">{`1. Kitchen 102
+    1. Adjust cabinet reveal
+    2. Touch up paint at window return`}</pre>
             <ol className="empty-state-steps">
-              <li><strong>Import</strong> your bulleted outline.</li>
+              <li><strong>Import</strong> your bulleted or numbered outline.</li>
               <li><strong>Drag photos</strong> onto the numbered items.</li>
               <li><strong>Print or save</strong> the finished PDF.</li>
             </ol>
