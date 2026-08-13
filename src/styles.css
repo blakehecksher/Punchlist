@@ -3816,6 +3816,179 @@ body {
   flex: 1;
 }
 
+/* Living outline: this panel is the document's persistent structure editor. */
+.import-workspace .import-panel-header {
+  min-height: 124px;
+  padding: 27px 25px 20px;
+}
+
+.meta-list-live {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 11px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.meta-list-live strong {
+  color: var(--ink);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.import-workspace .import-panel-copy {
+  margin-top: 14px;
+}
+
+.import-workspace-content {
+  display: flex;
+  flex-direction: column;
+  padding: 22px 25px 12px;
+  overflow: hidden;
+}
+
+.import-workspace .meta-list-toolbar {
+  order: -1;
+  flex: 0 0 auto;
+  flex-direction: row;
+  gap: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow-x: auto;
+}
+
+.meta-list-toolbar .import-format-toolbar-copy {
+  display: none;
+}
+
+.meta-list-toolbar .import-format-actions {
+  display: flex;
+  grid-template-columns: none;
+  gap: 0;
+  width: max-content;
+}
+
+.meta-list-toolbar .import-format-actions button {
+  min-width: 42px;
+  min-height: 40px;
+  padding: 7px 11px;
+  border-radius: 0;
+  border-right-width: 0;
+  background: #fff;
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.meta-list-toolbar .import-format-actions button:first-child {
+  border-radius: 3px 0 0 3px;
+}
+
+.meta-list-toolbar .import-format-actions button:last-child {
+  border-right-width: 1px;
+  border-radius: 0 3px 3px 0;
+}
+
+.meta-list-toolbar .import-format-actions button:nth-child(4) {
+  margin-left: 32px;
+  border-left-width: 1px;
+  border-radius: 3px 0 0 3px;
+}
+
+.meta-list-toolbar .import-format-actions button:nth-child(6) {
+  margin-left: 32px;
+  border-left-width: 1px;
+  border-radius: 3px 0 0 3px;
+}
+
+.meta-list-toolbar .import-format-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.meta-list-toolbar .import-format-actions kbd {
+  display: none;
+}
+
+.import-workspace .meta-list-editor {
+  order: 0;
+  flex: 1 1 auto;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 18px 15px;
+  resize: none;
+  border-color: var(--line-strong);
+  border-radius: 2px;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 12px;
+  line-height: 1.78;
+  tab-size: 4;
+}
+
+.meta-list-helper {
+  order: 1;
+  flex: 0 0 auto;
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.import-workspace-footer {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 25px;
+}
+
+.import-workspace .import-actions {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.import-workspace .import-file-btn,
+.import-workspace .btn-import {
+  min-height: 40px;
+  padding-right: 16px;
+  padding-left: 16px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.import-workspace .import-file-btn {
+  width: 145px;
+  flex: 0 0 145px;
+}
+
+.import-workspace .btn-import {
+  width: 164px;
+  flex: 0 0 164px;
+}
+
+.import-workspace-footer > .import-status {
+  min-width: 0;
+  margin: 0 0 0 auto;
+  font-size: 10px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.import-workspace .import-file-btn.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .btn:disabled {
   cursor: not-allowed;
   opacity: 0.42;
@@ -3978,6 +4151,22 @@ body {
   .import-workspace .import-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .import-workspace-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .import-workspace .import-file-btn,
+  .import-workspace .btn-import {
+    width: 100%;
+    flex-basis: auto;
+  }
+
+  .import-workspace-footer > .import-status {
+    margin-left: 0;
+    text-align: left;
   }
 
   .issuance-footer,

@@ -1,70 +1,56 @@
 # State
-_Last updated: 2026-08-12_
+_Last updated: 2026-08-13_
 
 ## Current focus
-Maintain a release-ready import-to-PDF workflow where previewing is consequence-free and every issued snapshot can be revisited, edited directly, or used as the basis for a correction.
+Test the living Punch List Notes workflow across computers from its GitHub branch and Pages deployment.
 
 ## What's working
-- The local Vite/React app passes `npm test`, `npm.cmd run lint`, and `npm.cmd run build`.
-- Preview / Print PDF opens the browser print flow without locking the project or adding an issuance record.
-- Record as issued creates an immutable dated snapshot, stores its document and photos, locks the working copy, and adds the version to the document ending.
-- Issued versions appear indented beneath the active project in the sidebar. Selecting any version opens that snapshot with Reprint, Fix issued version, and return-to-current actions.
-- Fix issued version works on the selected snapshot, including older versions. Users can edit that issuance in place or preserve it and create a correction from it.
-- Direct issuance edits keep the selected record's ID, issue date, numbering, and position in history while updating its document, photos, title, and counts.
-- Creating a correction from an older version starts with that version's document and points the new correction record back to the selected snapshot.
-- The bottom Issuances workspace is compact by default; issued-version management remains available in a disclosure.
-- The final printed page contains a top-left `End of Punch List` record with a full-width rule and indented issuance lines. Ten records fill the first column before a second column begins.
-- Document Settings includes `Show issuances`; turning it off keeps `End of Punch List` but hides its dated history.
-- The importer accepts numeric markers such as `1.` and `1)` in both named sections and nested room outlines, in addition to bullet markers.
-- The first detail page reserves enough room for site conditions; more than six conditions receive a dedicated first page.
-- Detail pages use one fixed four-card layout, and older saved six-card layouts migrate automatically.
-- General items use `GEN-NN`; an unnumbered Exterior section uses `EXT-NN`. Old `GN`, `000`, and `RM` exports still match during re-import.
-- A clean first import is treated as the baseline and shows zero new items. Opening a correction or the next issuance clears prior new markers.
-- Import Notes supports Bold, Underline, and Strikethrough across several item lines while preserving parseable list structure.
-- The Prepared by header field starts wider and expands with longer firm names without colliding with the centered document title.
-- The production build is published from `master` through the native GitHub Actions Pages workflow.
+- Punch List Notes is a persistent, autosaved outline rather than a one-time import form.
+- Room headings, indentation, item order, item text, and removed lines update the central punch-list document after a short save delay.
+- Direct description, room, and item changes in the central document mirror back into the outline.
+- Stable codes preserve item IDs and IndexedDB photos through reordering, room renames, and moves between rooms; new lines receive the next unused section number.
+- Enter continues the outline, Tab and Shift+Tab change indentation, and Bold, Underline, Strikethrough, Undo, and Redo remain available.
+- Word, Markdown, and text files can still seed the outline, and Paste from Word provides the quick first-use path.
+- The existing paginated two-by-two photo grid, print preview, issuance history, corrections, project sidebar, and browser-local persistence remain in place.
+- The selected option-3 UI is implemented and visually verified at desktop and narrow viewports.
+- `npm.cmd test`, `npm.cmd run lint`, and `npm.cmd run build` pass; the test suite has 16 passing tests.
+- GitHub Pages now deploys pushes from `codex/living-punch-list-notes` instead of `master` for cross-computer testing.
 
 ## In progress
-- Remaining release-readiness improvements: browser smoke/print regression tests, Print/PDF metadata preflight, destructive-action recovery, local-save/backup messaging, and a stronger existing-project import-success handoff.
+- Publish `codex/living-punch-list-notes` and verify its GitHub Pages workflow run.
 
 ## Known issues
-- The legacy `gh-pages` branch remains for deployment history but is no longer used by GitHub Actions Pages.
-- GitHub's top-level Pages API status still reports `errored` from the old legacy build, although the current deployment endpoint reports `succeed` and the public URL serves the current build.
-- Item codes in the working draft are derived from the current room name; issued snapshots are stable, but a live code can change before the next issuance.
-- Bold and strikethrough still influence revised/completed counts; explicit item lifecycle state is not implemented.
-- Re-import can remove missing working items, and direct item/room removal has no visible recovery path. Issued snapshots remain intact.
+- Removing a line from the living outline removes that working item after the save delay; issued snapshots remain intact, but there is no dedicated recovery history for the current draft.
+- Item codes in the working draft are derived from the current room name, so changing a room number changes the displayed prefix before the next issuance.
+- The issuance model still asks users to understand locks, snapshots, corrections, and direct historical edits; this remains the largest complexity outside the core note/photo/print loop.
 - Project data is browser-local and can disappear if browser data is cleared or the user changes devices without exporting a backup.
-- A formal issuance can still be recorded with blank project metadata; there is no short preflight yet.
-- `paginateDetail` does not charge empty sections against the page row budget.
-- The rich outline editor relies on the browser's content-editing command support for formatting.
+- A formal issuance can still be recorded with blank project metadata; there is no short preflight.
+- The rich outline editor relies on browser content-editing command support for formatting and history.
+- The legacy `gh-pages` branch and stale top-level Pages error remain, although the native GitHub Actions deployment succeeds.
 
 ## Next actions
-1. Add browser smoke/print regression coverage for preview printing, editing old snapshots, correction-from-selected behavior, persistence, photos, and long site-condition pages.
-2. Add a short formal-issuance preflight for blank project metadata and optional issuance notes.
-3. Add undo/recovery for removed rooms and items, plus review before re-import removes missing items.
+1. Open the hosted app on the second computer and paste a representative Word punch list.
+2. Exercise repeated add, edit, reorder, and remove cycles with attached photos.
+3. Decide whether to simplify the issuance surface now that the core authoring loop is clear.
 
 ## How to verify
 ```text
-npm test
+npm.cmd test
 npm.cmd run lint
 npm.cmd run build
-Click Preview / Print PDF; cancel print and confirm the project stays editable and no issued version is added.
-Click Record as issued; confirm the project locks, the document ending gains an entry, and the sidebar gains an indented snapshot.
-Select any issued version in the sidebar; confirm it can be reprinted and Back to current document restores the working copy.
-Choose Fix issued version > Edit this issued version; confirm the selected snapshot becomes editable and Save issued version updates that snapshot in place.
-Choose Fix issued version > Create correction from this version; confirm a Correction draft opens using the selected snapshot's document.
-Open Manage issued versions and confirm titles and Reprint controls remain available.
-Enter a long Prepared by name; confirm the field expands without overlapping the centered title.
+Open Punch List Notes and add an indented line; confirm it receives the next code and appears in the central document.
+Edit that item in the central document; confirm the outline updates without closing the panel.
+Attach a photo, reorder the coded line, rename its room, and confirm the photo remains attached.
+Delete a line from the outline and confirm the working document removes it after the save delay.
+Click Preview / Print PDF; cancel print and confirm the project stays editable and no issuance is added.
 git -c safe.directory='G:/Files/Github/Punchlist' status --short --branch
 ```
 
 ## Recent logs
-- docs/log/2026-08-12 0903 Edit any issued version.md - made Fix issued version operate on the selected snapshot with direct-edit and correction choices.
-- docs/log/2026-08-12 0122 Separate preview and issuance.md - separated consequence-free PDF preview from formal issuance and added sidebar snapshot navigation plus the replacement/correction decision.
-- docs/log/2026-08-12 0041 Expand prepared-by field.md - widened the Prepared by input and made its width respond safely to longer firm names.
-- docs/log/2026-08-11 1600 Testing pagination and numbered import.md - added the initial automated test layer, protected the first detail page from oversized site-condition lists, and documented numbered-list imports.
-- docs/log/2026-08-06 1133 GitHub Pages rerun succeeded.md - reran the complete master workflow after the manual Pages reset and verified the live site updated.
-- docs/log/2026-08-06 0836 Optional issuance history and ending flow.md - added the Show issuances setting and made the document ending occupy the next available row.
-- docs/log/2026-08-06 0052 Parser semantics and document ending.md - added GEN/EXT aliases, baseline new-item logic, safe multi-line formatting, formatted-heading parsing, and the left-aligned multi-column issuance ending.
-- docs/log/2026-08-06 0017 Issuance document ending and importer fixes.md - fixed four-card pagination, document-end issuance history, editable labels, importer formatting edge cases, and panel alignment.
-- docs/log/2026-08-05 2332 Immutable issues and rich notes.md - implemented lock/correct/reissue history, true WYSIWYG outline formatting, and snapshot-aware backups.
+- docs/log/2026-08-13 0954 Publish living notes test branch.md — moved the Pages trigger to the living-notes branch and prepared the complete implementation for GitHub testing.
+- docs/log/2026-08-13 0842 Living punch list notes implementation.md — implemented and verified option 3 as a bidirectionally synchronized structural outline.
+- docs/log/2026-08-13 0131 Meta-list panel visual correction.md — corrected the mockups so only the right panel evolves while the central document remains intact.
+- docs/log/2026-08-13 0112 Living list visual directions.md — generated three complete UI directions for the synchronized outline, photos, and print model.
+- docs/log/2026-08-13 0048 Outline as living list.md — framed the outline as a synchronized editor over the item/photo model rather than a repeated import surface.
+- docs/log/2026-08-13 0040 Revert first-run import experiment.md — removed the rejected onboarding and outline-editor experiment.
+- docs/log/2026-08-12 2320 Complexity and carry-forward review.md — identified issuance as the main source of product drift and proposed a simpler living-project model.

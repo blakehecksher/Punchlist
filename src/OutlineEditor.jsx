@@ -125,6 +125,146 @@ function selectionIsInside(editor, selection) {
   return editor.contains(range.commonAncestorContainer);
 }
 
+function flattenedText(node) {
+  let result = "";
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === TEXT_NODE) {
+      result += child.textContent ?? "";
+      return;
+    }
+    if (child.nodeType !== ELEMENT_NODE) return;
+    if (child.tagName === "BR") {
+      result += "\n";
+      return;
+    }
+    const isBlock = child.tagName === "DIV" || child.tagName === "P";
+    if (isBlock && result && !result.endsWith("\n")) result += "\n";
+    result += flattenedText(child);
+    if (isBlock && !result.endsWith("\n")) result += "\n";
+  });
+  return result;
+}
+
+function getCaretAnchor(editor) {
+  const selection = window.getSelection();
+  if (!selectionIsInside(editor, selection) || !selection.isCollapsed) return null;
+
+  const range = selection.getRangeAt(0).cloneRange();
+  range.setStart(editor, 0);
+  const fragment = range.cloneContents();
+  const holder = document.createElement("div");
+  holder.appendChild(fragment);
+  const before = flattenedText(holder);
+  return {
+    before,
+    context: before.slice(-64),
+  };
+}
+
+function placeCaretAtTextOffset(editor, requestedOffset) {
+  let remaining = Math.max(0, requestedOffset);
+  let lastTextNode = null;
+  const selection = window.getSelection();
+  if (!selection) return;
+
+  const range = document.createRange();
+  const walk = (node) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === TEXT_NODE) {
+        lastTextNode = child;
+        const length = child.textContent?.length ?? 0;
+        if (remaining <= length) {
+          range.setStart(child, remaining);
+          return true;
+        }
+        remaining -= length;
+        continue;
+      }
+      if (child.nodeType !== ELEMENT_NODE) continue;
+      if (child.tagName === "BR") {
+        if (remaining <= 1) {
+          range.setStartAfter(child);
+          return true;
+        }
+        remaining -= 1;
+        continue;
+      }
+      if (walk(child)) return true;
+    }
+    return false;
+  };
+
+  if (!walk(editor)) {
+    if (lastTextNode) {
+      range.setStart(lastTextNode, lastTextNode.textContent?.length ?? 0);
+    } else {
+      range.setStart(editor, editor.childNodes.length);
+    }
+  }
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function restoreCaretAnchor(editor, anchor) {
+  if (!anchor) return;
+  const nextText = flattenedText(editor);
+  const contextIndex = anchor.context
+    ? nextText.lastIndexOf(anchor.context)
+    : -1;
+  const offset =
+    contextIndex >= 0
+      ? contextIndex + anchor.context.length
+      : Math.min(anchor.before.length, nextText.length);
+  placeCaretAtTextOffset(editor, offset);
+}
+
+function restoreCollapsedSelection(node, offset) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.setStart(node, Math.max(0, Math.min(offset, node.textContent?.length ?? 0)));
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function adjustCurrentLineIndent(editor, direction) {
+  const selection = window.getSelection();
+  if (!selectionIsInside(editor, selection) || !selection.isCollapsed) {
+    editor.focus();
+    return false;
+  }
+
+  const range = selection.getRangeAt(0);
+  const node = range.startContainer;
+  if (node.nodeType !== TEXT_NODE) {
+    if (direction > 0) document.execCommand("insertText", false, "    ");
+    return direction > 0;
+  }
+
+  const value = node.textContent ?? "";
+  const offset = range.startOffset;
+  const lineStart = value.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
+
+  if (direction > 0) {
+    node.textContent = `${value.slice(0, lineStart)}    ${value.slice(lineStart)}`;
+    restoreCollapsedSelection(node, offset + 4);
+    return true;
+  }
+
+  const removable = value.slice(lineStart).match(/^ {1,4}/)?.[0].length ?? 0;
+  if (!removable) return false;
+  node.textContent = `${value.slice(0, lineStart)}${value.slice(lineStart + removable)}`;
+  restoreCollapsedSelection(node, Math.max(lineStart, offset - removable));
+  return true;
+}
+
+function getCurrentLineBeforeCaret(editor) {
+  const before = getCaretAnchor(editor)?.before.replace(/\u00a0/g, " ") ?? "";
+  return before.split("\n").at(-1) ?? "";
+}
+
 const OutlineEditor = forwardRef(function OutlineEditor(
   {
     value,
@@ -134,6 +274,7 @@ const OutlineEditor = forwardRef(function OutlineEditor(
     placeholder,
     className,
     ariaLabel,
+    readOnly = false,
   },
   forwardedRef,
 ) {
@@ -165,13 +306,39 @@ const OutlineEditor = forwardRef(function OutlineEditor(
     [emitChange],
   );
 
+  const applyIndent = useCallback(
+    (direction) => {
+      const editor = editorRef.current;
+      if (!editor || readOnly) return { ok: false };
+      editor.focus();
+      const ok = adjustCurrentLineIndent(editor, direction);
+      if (ok) emitChange();
+      return { ok };
+    },
+    [emitChange, readOnly],
+  );
+
+  const applyHistory = useCallback(
+    (command) => {
+      const editor = editorRef.current;
+      if (!editor || readOnly) return { ok: false };
+      editor.focus();
+      const ok = document.execCommand(command);
+      if (ok) emitChange();
+      return { ok };
+    },
+    [emitChange, readOnly],
+  );
+
   useImperativeHandle(
     forwardedRef,
     () => ({
       applyFormat,
+      applyIndent,
+      applyHistory,
       focus: () => editorRef.current?.focus(),
     }),
-    [applyFormat],
+    [applyFormat, applyHistory, applyIndent],
   );
 
   useLayoutEffect(() => {
@@ -185,12 +352,37 @@ const OutlineEditor = forwardRef(function OutlineEditor(
     if (!editorRef.current) return;
     const current = value ?? "";
     if (current === lastValueRef.current) return;
-    editorRef.current.innerHTML = canonicalToEditorHtml(current);
+    const editor = editorRef.current;
+    const anchor = document.activeElement === editor ? getCaretAnchor(editor) : null;
+    editor.innerHTML = canonicalToEditorHtml(current);
     lastValueRef.current = current;
+    restoreCaretAnchor(editor, anchor);
   }, [value]);
 
   const handleKeyDown = useCallback(
     (event) => {
+      if (readOnly) return;
+
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const result = applyIndent(event.shiftKey ? -1 : 1);
+        onShortcut?.(event.shiftKey ? "outdent" : "indent", result);
+        return;
+      }
+
+      if (event.key === "Enter" && !event.shiftKey) {
+        const editor = editorRef.current;
+        const currentLine = editor ? getCurrentLineBeforeCaret(editor) : "";
+        const bullet = currentLine.match(/^(\s*)(?:[-*+]|(?:\d+)[.)])\s+/);
+        if (bullet) {
+          event.preventDefault();
+          const indentation = bullet[1].length === 0 ? "    " : bullet[1];
+          document.execCommand("insertHTML", false, `<br>${indentation}- `);
+          emitChange();
+          return;
+        }
+      }
+
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
 
       const key = event.key.toLowerCase();
@@ -213,7 +405,7 @@ const OutlineEditor = forwardRef(function OutlineEditor(
       const result = applyFormat(command, label);
       onShortcut?.(label, result);
     },
-    [applyFormat, onShortcut],
+    [applyFormat, applyIndent, emitChange, onShortcut, readOnly],
   );
 
   const handlePaste = useCallback(
@@ -244,9 +436,10 @@ const OutlineEditor = forwardRef(function OutlineEditor(
     <div
       ref={editorRef}
       className={className}
-      contentEditable
+      contentEditable={!readOnly}
       role="textbox"
       aria-label={ariaLabel}
+      aria-readonly={readOnly}
       aria-multiline="true"
       aria-keyshortcuts="Control+B Meta+B Control+U Meta+U Control+Shift+X Meta+Shift+X"
       data-placeholder={placeholder}

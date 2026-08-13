@@ -20,7 +20,8 @@ import {
 } from "./importHtml.js";
 import { readImportFile } from "./importFile.js";
 import { parseImportText } from "./importParser.js";
-import { copyNotesToClipboard } from "./exportNotes.js";
+import { buildExportMarkdown, copyNotesToClipboard } from "./exportNotes.js";
+import { syncOutlineData } from "./outlineModel.js";
 import {
   saveProjectToFile,
   loadProjectFromFile,
@@ -29,7 +30,6 @@ import {
 } from "./projectFile.js";
 import {
   formatIssueCode,
-  formatLegacyIssueCodes,
   getNextIssueSeq,
   getRoomIssuePrefix,
   isUnnumberedRoom,
@@ -58,8 +58,6 @@ import {
 import "./styles.css";
 
 const uid = () => Math.random().toString(36).slice(2, 9);
-const normalizeRoomKey = (name) =>
-  name.trim().replace(/\s+/g, " ").toLowerCase();
 // Named prefixes such as EXT and the 000 missing-number fallback sort before
 // numbered rooms. Keep the fallback finite so the name tiebreak remains valid.
 const getRoomSortNumber = (roomName) => {
@@ -141,32 +139,6 @@ const PUNCH_LIST_TEMPLATE = `- Site Conditions
     - Item 1
     - Item 2`;
 const EXAMPLE_VERSION = 2;
-const STARTER_OUTLINE = `- Site Conditions
-    - Protect finished flooring through the final walkthrough
-    - Maintain dust protection at occupied areas
-- General Notes
-    - Clean work areas and remove construction debris
-    - Match adjacent paint sheen at touch-up locations
-- Kitchen 102
-    - Adjust cabinet reveal
-    - Touch up paint at window return
-- Study 410
-    - Install door stop
-    - Tighten hinge screws
-- Living Room 201
-    - Caulk baseboard at east wall
-    - Touch up paint at built-in
-- Primary Bedroom 301
-    - Adjust closet door alignment
-    - Reinstall towel bar
-- Bathroom 302
-    - Replace cracked tile at niche
-    - Clean grout at shower floor
-- Hall 2nd Floor
-    - Patch and paint wall at railing
-- Exterior
-    - Seal around window trim
-    - Touch up siding at south corner`;
 const DEFAULT_HEADER_NOTE =
   "Items shown <u>underlined</u> are new as of this walkthrough.<br>Items shown in <b>bold</b> type indicate revisions.<br>Items shown with <s>strikethrough</s> type are complete as of this walkthrough and will be removed from subsequent punch list.";
 
@@ -215,208 +187,6 @@ function summarizeEntries(entries) {
     }),
     { total: 0, new: 0, revised: 0, completed: 0 },
   );
-}
-
-function buildIssueCodeIndex(items, kind, title) {
-  const index = new Map();
-
-  items.forEach((item, position) => {
-    index.set(formatIssueCode(kind, title, item.issueSeq).toUpperCase(), position);
-
-    formatLegacyIssueCodes(kind, title, item.issueSeq).forEach((legacyCode) => {
-      if (!index.has(legacyCode)) index.set(legacyCode, position);
-    });
-  });
-
-  return index;
-}
-
-function mergeImportedNotes(state, payload) {
-  const allowNewMarkers = normalizeIssuance(state.issuance).history.length > 0;
-  const importedIsNew = (imported) =>
-    allowNewMarkers && Boolean(imported.isNew);
-  const rooms = state.rooms.map((room) => ({
-    ...room,
-    items: [...room.items],
-  }));
-  const roomIndexByKey = new Map(
-    rooms.map((room, index) => [normalizeRoomKey(room.name), index]),
-  );
-  const nextGeneralNotes = [...state.generalNotes];
-  const generalNoteIndexByCode = buildIssueCodeIndex(
-    nextGeneralNotes,
-    "generalNotes",
-    state.generalNotesTitle,
-  );
-  let nextGeneralIssueSeq = getNextIssueSeq(
-    nextGeneralNotes,
-    state.nextGeneralIssueSeq,
-  );
-  let updatedCount = 0;
-  let newCount = 0;
-  let removedCount = 0;
-  const touchedGeneralIndices = new Set();
-
-  payload.generalNotes.forEach((imported) => {
-    const existingIndex =
-      imported.issueCode && generalNoteIndexByCode.has(imported.issueCode)
-        ? generalNoteIndexByCode.get(imported.issueCode)
-        : undefined;
-
-    if (existingIndex !== undefined) {
-      touchedGeneralIndices.add(existingIndex);
-      nextGeneralNotes[existingIndex] = {
-        ...nextGeneralNotes[existingIndex],
-        description: imported.description,
-        isNew: importedIsNew(imported),
-      };
-      updatedCount += 1;
-      return;
-    }
-
-    touchedGeneralIndices.add(nextGeneralNotes.length);
-    nextGeneralNotes.push(
-      makeItem(imported.description, nextGeneralIssueSeq, importedIsNew(imported)),
-    );
-    nextGeneralIssueSeq += 1;
-    newCount += 1;
-  });
-
-  // Remove general notes absent from the import
-  let finalGeneralNotes = nextGeneralNotes;
-  if (payload.generalNotes.length > 0) {
-    finalGeneralNotes = nextGeneralNotes.filter((_, i) =>
-      touchedGeneralIndices.has(i),
-    );
-    removedCount += nextGeneralNotes.length - finalGeneralNotes.length;
-  }
-
-  payload.rooms.forEach((room) => {
-    const key = normalizeRoomKey(room.name);
-    const existingIndex = roomIndexByKey.get(key);
-
-    if (existingIndex !== undefined) {
-      const existingRoom = rooms[existingIndex];
-      const nextItems = [...existingRoom.items];
-      const roomItemIndexByCode = buildIssueCodeIndex(
-        nextItems,
-        "room",
-        existingRoom.name,
-      );
-      let nextRoomIssueSeq = getNextIssueSeq(
-        nextItems,
-        existingRoom.nextItemIssueSeq,
-      );
-
-      const touchedRoomIndices = new Set();
-
-      room.items.forEach((imported) => {
-        const matchedIndex =
-          imported.issueCode && roomItemIndexByCode.has(imported.issueCode)
-            ? roomItemIndexByCode.get(imported.issueCode)
-            : undefined;
-
-        if (matchedIndex !== undefined) {
-          touchedRoomIndices.add(matchedIndex);
-          nextItems[matchedIndex] = {
-            ...nextItems[matchedIndex],
-            description: imported.description,
-            isNew: importedIsNew(imported),
-          };
-          updatedCount += 1;
-          return;
-        }
-
-        touchedRoomIndices.add(nextItems.length);
-        nextItems.push(
-          makeItem(imported.description, nextRoomIssueSeq, importedIsNew(imported)),
-        );
-        nextRoomIssueSeq += 1;
-        newCount += 1;
-      });
-
-      // Remove room items absent from the import
-      const filteredItems = nextItems.filter((_, i) =>
-        touchedRoomIndices.has(i),
-      );
-      removedCount += nextItems.length - filteredItems.length;
-
-      rooms[existingIndex] = {
-        ...existingRoom,
-        nextItemIssueSeq: nextRoomIssueSeq,
-        items: filteredItems,
-      };
-      return;
-    }
-
-    let nextRoomIssueSeq = 1;
-    const importedItems = room.items.map((imported) => {
-      const item = makeItem(
-        imported.description,
-        nextRoomIssueSeq,
-        importedIsNew(imported),
-      );
-      nextRoomIssueSeq += 1;
-      newCount += 1;
-      return item;
-    });
-    roomIndexByKey.set(key, rooms.length);
-    rooms.push({
-      id: uid(),
-      name: room.name,
-      nextItemIssueSeq: nextRoomIssueSeq,
-      items: importedItems,
-    });
-  });
-
-  // Only replace site conditions when the import actually carries some.
-  // Otherwise an import that simply omits the section wiped them out.
-  const replacedSiteConditions = payload.siteConditions.length > 0;
-
-  return {
-    data: {
-      ...state,
-      nextGeneralIssueSeq,
-      siteConditions: replacedSiteConditions
-        ? [...payload.siteConditions]
-        : state.siteConditions,
-      generalNotes: finalGeneralNotes,
-      rooms,
-    },
-    counts: {
-      updatedCount,
-      newCount,
-      removedCount,
-      affectedRoomCount: payload.rooms.length,
-      replacedSiteConditions,
-    },
-  };
-}
-
-function summarizeMerge(parsed, state) {
-  const { counts } = mergeImportedNotes(state, parsed);
-  const totalTouched =
-    counts.updatedCount + counts.newCount + counts.removedCount;
-
-  if (totalTouched === 0) {
-    return counts.replacedSiteConditions
-      ? "Merged: site conditions replaced."
-      : "Nothing merged.";
-  }
-
-  const roomPart =
-    counts.affectedRoomCount > 0
-      ? ` across ${counts.affectedRoomCount} room${counts.affectedRoomCount === 1 ? "" : "s"}`
-      : "";
-  const siteConditionsPart = counts.replacedSiteConditions
-    ? " Site conditions replaced."
-    : "";
-  const removedPart =
-    counts.removedCount > 0
-      ? `, ${counts.removedCount} removed`
-      : "";
-
-  return `Merged: ${counts.updatedCount} updated, ${counts.newCount} new item${counts.newCount === 1 ? "" : "s"}${removedPart}${roomPart}.${siteConditionsPart}`;
 }
 
 function makeBlankProjectData() {
@@ -950,9 +720,6 @@ function reducer(state, action) {
         ),
       };
 
-    case "mergeNotes":
-      return mergeImportedNotes(state, action.payload).data;
-
     case "addRoomItem":
       return {
         ...state,
@@ -1095,6 +862,9 @@ export default function PunchListApp() {
   const [importText, setImportText] = useState("");
   const outlineEditorRef = useRef(null);
   const [importStatus, setImportStatus] = useState("");
+  const outlineSyncTimer = useRef(null);
+  const outlineApplyingRef = useRef(false);
+  const outlineDataValueRef = useRef("");
   const [templateCopyStatus, setTemplateCopyStatus] = useState("");
   const [clearConfirm, setClearConfirm] = useState(false);
   const clearTimer = useRef(null);
@@ -1147,7 +917,7 @@ export default function PunchListApp() {
           const normalized = normalizeStoredData(loadable, photos);
           dispatch({ type: "load", data: normalized });
           if (normalized.isExample) {
-            setImportText(STARTER_OUTLINE);
+            setImportText(buildExportMarkdown(normalized));
             setImportOpen(true);
           }
           setSaveStatus("Loaded");
@@ -1174,6 +944,28 @@ export default function PunchListApp() {
     }, 800);
     return () => clearTimeout(saveTimer.current);
   }, [data, issuanceEdit, snapshotView]);
+
+  useEffect(() => {
+    const nextOutline = buildExportMarkdown(data);
+    if (nextOutline === outlineDataValueRef.current) return;
+    outlineDataValueRef.current = nextOutline;
+
+    if (outlineApplyingRef.current) {
+      outlineApplyingRef.current = false;
+      return;
+    }
+
+    clearTimeout(outlineSyncTimer.current);
+    setImportText(nextOutline);
+    if (importOpen) setImportStatus("All changes saved");
+  }, [data, importOpen]);
+
+  useEffect(
+    () => () => {
+      clearTimeout(outlineSyncTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     try {
@@ -1255,7 +1047,7 @@ export default function PunchListApp() {
             data: normalized,
           });
           setImportOpen(Boolean(normalized.isExample));
-          setImportText(normalized.isExample ? STARTER_OUTLINE : "");
+          setImportText(buildExportMarkdown(normalized));
           setImportStatus("");
           setHelpOpen(false);
         }
@@ -1351,7 +1143,7 @@ export default function PunchListApp() {
       setActiveId(nextId);
       dispatch({ type: "load", data: exampleData });
       refreshIndex();
-      setImportText(STARTER_OUTLINE);
+      setImportText(buildExportMarkdown(exampleData));
       setImportStatus("");
       setImportOpen(true);
       return;
@@ -1373,77 +1165,110 @@ export default function PunchListApp() {
     refreshIndex();
   }, []);
 
-  const handleImportFile = useCallback(async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const handleOutlineDraftChange = useCallback(
+    (nextValue) => {
+      setImportText(nextValue);
+      clearTimeout(outlineSyncTimer.current);
 
-    try {
-      const text = await readImportFile(file);
-      setImportText(text);
-      setImportStatus(
-        `${file.name} loaded. Review the punch list, then import.`,
-      );
-    } catch (error) {
-      setImportStatus(
-        error instanceof Error
-          ? error.message
-          : "That file could not be read. Use .docx, .md, or .txt.",
-      );
-    } finally {
-      event.target.value = "";
-    }
-  }, []);
-
-  const handleImportSubmit = useCallback(() => {
-    try {
-      const parsed = parseImportText(importText);
-
-      if (data.isExample) {
-        persistActiveProject(data);
-        const blankData = makeBlankProjectData();
-        const importedData = mergeImportedNotes(blankData, parsed).data;
-        const id = createProject(importedData);
-
-        activeIdRef.current = id;
-        setActiveIdState(id);
-        setActiveId(id);
-        dispatch({ type: "load", data: importedData });
-        refreshIndex();
-        setImportText("");
-        setImportStatus("");
-        setImportOpen(false);
-        setSaveStatus("Punch list created");
-        setTimeout(() => setSaveStatus(""), 1800);
+      if (!nextValue.trim()) {
+        setImportStatus("Keep one room or section in the outline.");
         return;
       }
 
-      dispatch({ type: "mergeNotes", payload: parsed });
-      setImportStatus(summarizeMerge(parsed, data));
-      // The panel stays open: the status it just set is rendered inside it,
-      // so closing here threw away the only report of what was imported.
-      setImportText("");
-    } catch (error) {
-      setImportStatus(
-        error instanceof Error ? error.message : "Import failed.",
-      );
+      setImportStatus("Saving changes...");
+      outlineSyncTimer.current = setTimeout(() => {
+        try {
+          const parsed = parseImportText(nextValue);
+          const baseData = data.isExample ? makeBlankProjectData() : data;
+          const nextData = syncOutlineData(baseData, parsed);
+          const canonicalOutline = buildExportMarkdown(nextData);
+          const hasUnnumberedItems = [
+            ...parsed.generalNotes,
+            ...parsed.rooms.flatMap((room) => room.items),
+          ].some((item) => !item.issueCode);
+
+          outlineApplyingRef.current =
+            canonicalOutline !== outlineDataValueRef.current;
+
+          if (data.isExample) {
+            persistActiveProject(data);
+            const id = createProject(nextData);
+            activeIdRef.current = id;
+            setActiveIdState(id);
+            setActiveId(id);
+            refreshIndex();
+            setSaveStatus("Punch list created");
+            setTimeout(() => setSaveStatus(""), 1800);
+          }
+
+          dispatch({ type: "load", data: nextData });
+          if (
+            hasUnnumberedItems ||
+            data.isExample ||
+            canonicalOutline !== nextValue.trim()
+          ) {
+            setImportText(canonicalOutline);
+          }
+          setImportStatus("All changes saved");
+        } catch (error) {
+          outlineApplyingRef.current = false;
+          setImportStatus(
+            error instanceof Error
+              ? `Keep editing — ${error.message}`
+              : "Keep editing — the outline is not structured yet.",
+          );
+        }
+      }, 650);
+    },
+    [data, persistActiveProject],
+  );
+
+  const handleImportFile = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      try {
+        const text = await readImportFile(file);
+        handleOutlineDraftChange(text);
+      } catch (error) {
+        setImportStatus(
+          error instanceof Error
+            ? error.message
+            : "That file could not be read. Use .docx, .md, or .txt.",
+        );
+      } finally {
+        event.target.value = "";
+      }
+    },
+    [handleOutlineDraftChange],
+  );
+
+  const handlePasteFromWord = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) throw new Error("The clipboard has no text to paste.");
+      handleOutlineDraftChange(text);
+      outlineEditorRef.current?.focus();
+    } catch {
+      outlineEditorRef.current?.focus();
+      setImportStatus("Press Ctrl+V to paste from Word, Docs, or Notes.");
     }
-  }, [data, importText, persistActiveProject]);
+  }, [handleOutlineDraftChange]);
 
   const handleOpenImport = useCallback(() => {
     setImportOpen(true);
     setHelpOpen(false);
-    setImportStatus("");
-    if (data.isExample && !importText.trim()) {
-      setImportText(STARTER_OUTLINE);
-    }
-  }, [data.isExample, importText]);
+    setImportStatus("All changes saved");
+    if (!importText.trim()) setImportText(buildExportMarkdown(data));
+  }, [data, importText]);
 
   const applyImportFormatting = useCallback((command, label) => {
     const result = outlineEditorRef.current?.applyFormat(command, label);
     if (!result) return;
     setImportStatus(
       result.ok
-        ? `${label} applied. The styling will carry into the punch list.`
+        ? `${label} applied. Saving changes...`
         : result.reason,
     );
   }, []);
@@ -1451,7 +1276,7 @@ export default function PunchListApp() {
   const handleImportShortcut = useCallback((label, result) => {
     setImportStatus(
       result.ok
-        ? `${label} applied. The styling will carry into the punch list.`
+        ? `${label} applied. Saving changes...`
         : result.reason,
     );
   }, []);
@@ -1461,7 +1286,7 @@ export default function PunchListApp() {
     const converted = convertHtmlToImportText(html);
     if (!converted) return null;
     setImportStatus(
-      "Rich paste converted to an editable outline. Review it, then import.",
+      "Pasted outline converted. Saving changes...",
     );
     return converted;
   }, []);
@@ -1645,6 +1470,21 @@ export default function PunchListApp() {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => window.print());
     });
+  }, []);
+
+  const applyOutlineHistory = useCallback((command) => {
+    const result = outlineEditorRef.current?.applyHistory(command);
+    if (!result?.ok) return;
+    setImportStatus("Saving changes...");
+  }, []);
+
+  const applyOutlineIndent = useCallback((direction) => {
+    const result = outlineEditorRef.current?.applyIndent(direction);
+    if (!result?.ok) {
+      setImportStatus("Place the cursor on a line, then change its indentation.");
+      return;
+    }
+    setImportStatus("Saving changes...");
   }, []);
 
   const handleOpenHistoricalIssue = useCallback(
@@ -1896,7 +1736,6 @@ export default function PunchListApp() {
 
   const handleAddRoom = useCallback(() => {
     dispatch({ type: "addRoom" });
-    setImportOpen(false);
     setHelpOpen(false);
 
     // Adding a room can create another fixed-size document page. Take the user
@@ -2725,13 +2564,13 @@ export default function PunchListApp() {
                 handleOpenImport();
               }
             }}
-            title="Import notes"
+            title="Edit punch list notes"
             aria-expanded={importOpen}
             aria-controls="import-workspace"
             disabled={isReadOnly}
           >
             <ImportIcon />
-            Import notes
+            Punch list notes
           </button>
           <button
             className="btn btn-secondary btn-issuance-jump"
@@ -2840,22 +2679,22 @@ export default function PunchListApp() {
           </div>
           <div className="import-panel-body">
             <p className="help-intro">
-              Draft in Word, Docs, Notes, or the text editor you already use.
-              Punch List turns that outline into a numbered photo document.
+              Paste your existing notes once, then keep the punch list current
+              here. The living outline and photo document stay in sync.
             </p>
             <ol className="help-steps">
               {[
                 <>
-                  <strong>Write your notes in Word, Docs, Notes, or another editor.</strong>{" "}
-                  Make each room a top-level bullet and indent its items below.
+                  <strong>Start with the notes you already have.</strong> Paste
+                  from Word or load a notes file into Punch List Notes.
                 </>,
                 <>
-                  <strong>Import the outline here.</strong> Paste it or load a
-                  Word or text file; item IDs are assigned automatically.
+                  <strong>Keep the outline current.</strong> Press Enter for a
+                  new item, indent it under a room, and edit or reorder it there.
                 </>,
                 <>
-                  <strong>Add photos to the numbered items.</strong> Click a photo
-                  area or drag images in from a folder.
+                  <strong>Add photos in the document.</strong> Click a photo area
+                  or drag images in; the item number keeps each photo attached.
                 </>,
                 <>
                   <strong>Preview or print freely.</strong> When the document is
@@ -2872,8 +2711,8 @@ export default function PunchListApp() {
               <div className="help-template-copy">
                 <strong>Start from a template</strong>
                 <span>
-                  Copy the bullet structure, then draft the list in your preferred
-                  editor before importing it here.
+                  Copy the bullet structure, paste it into Punch List Notes, and
+                  keep editing it there.
                 </span>
               </div>
               <button
@@ -2885,9 +2724,8 @@ export default function PunchListApp() {
               </button>
             </div>
             <p className="help-note">
-              Missed something after importing? Add a room or item directly on
-              the page. Re-importing numbered notes updates them without
-              detaching their photos.
+              Punch List Notes is the master list. Changes made directly in the
+              document are mirrored back into it automatically.
             </p>
             <div className="help-issue-callout">
               <strong>Printing and issuing are separate</strong>
@@ -2913,18 +2751,21 @@ export default function PunchListApp() {
           <div className="import-panel-header">
             <div>
               <div className="import-panel-label" id="import-workspace-title">
-                {data.isExample ? "Start your punch list" : "Import notes"}
+                Edit punch list notes
+              </div>
+              <div className="meta-list-live">
+                <strong>Live</strong>
+                <span aria-hidden="true">·</span>
+                <span>Changes appear in the document</span>
               </div>
               <p className="import-panel-copy">
-                {data.isExample
-                  ? "Replace the practice outline with your notes, then build a new project."
-                  : "Review a long outline comfortably before merging it into this project."}
+                Room headings and indented items control the document structure.
               </p>
             </div>
             <button
               className="import-close"
               onClick={() => setImportOpen(false)}
-              aria-label="Close import panel"
+              aria-label="Close punch list notes"
             >
               ✕
             </button>
@@ -2932,37 +2773,29 @@ export default function PunchListApp() {
 
           <div className="import-panel-body">
             <div className="import-workspace-content">
-              <p className="import-section-heading">Paste your notes</p>
-              <p className="import-helper import-helper--muted">
-                Room names are top-level bullets; punch items are indented
-                below. Paste from Word, Docs, or Notes, or load a Word or text
-                file.
-              </p>
               <OutlineEditor
                 ref={outlineEditorRef}
-                className="import-textarea import-outline-editor"
+                className="import-textarea import-outline-editor meta-list-editor"
                 value={importText}
-                onChange={(value) => {
-                  setImportText(value);
-                  setImportStatus("");
-                }}
+                onChange={handleOutlineDraftChange}
                 onStructuredPaste={handleStructuredImportPaste}
                 onShortcut={handleImportShortcut}
-                placeholder="Paste your bulleted or numbered outline here..."
+                placeholder="Paste a room-and-item outline here..."
                 ariaLabel="Punch list outline"
+                readOnly={isReadOnly}
               />
               <div
-                className="import-format-toolbar"
+                className="import-format-toolbar meta-list-toolbar"
                 role="group"
                 aria-label="Format selected punch item text"
               >
                 <div className="import-format-toolbar-copy">
-                  <strong>Format selected text</strong>
-                  <span>Format one item or select across several.</span>
+                  <strong>Outline tools</strong>
                 </div>
                 <div className="import-format-actions">
                   <button
                     type="button"
+                    disabled={isReadOnly}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => applyImportFormatting("bold", "bold")}
                     aria-label="Bold selected text"
@@ -2974,6 +2807,7 @@ export default function PunchListApp() {
                   </button>
                   <button
                     type="button"
+                    disabled={isReadOnly}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() =>
                       applyImportFormatting("underline", "underline")
@@ -2987,6 +2821,7 @@ export default function PunchListApp() {
                   </button>
                   <button
                     type="button"
+                    disabled={isReadOnly}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() =>
                       applyImportFormatting("strikeThrough", "strikethrough")
@@ -2998,61 +2833,76 @@ export default function PunchListApp() {
                     <span className="import-format-strike">S</span>
                     <kbd>Ctrl+Shift+X</kbd>
                   </button>
+                  <button
+                    type="button"
+                    disabled={isReadOnly}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => applyOutlineHistory("undo")}
+                    title="Undo"
+                  >
+                    Undo
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isReadOnly}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => applyOutlineHistory("redo")}
+                    title="Redo"
+                  >
+                    Redo
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isReadOnly}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => applyOutlineIndent(-1)}
+                    title="Move line out · Shift+Tab"
+                  >
+                    Outdent
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isReadOnly}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => applyOutlineIndent(1)}
+                    title="Move line in · Tab"
+                  >
+                    Indent
+                  </button>
                 </div>
+              </div>
+              <p className="meta-list-helper">
+                Enter adds an item · Tab / Shift+Tab changes indentation
+              </p>
+            </div>
+
+            <div className="import-workspace-footer">
+              <div className="import-actions">
+                <label
+                  className={`import-file-btn${isReadOnly ? " is-disabled" : ""}`}
+                >
+                  Load notes file
+                  <input
+                    type="file"
+                    accept=".docx,.md,.markdown,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
+                    onChange={handleImportFile}
+                    disabled={isReadOnly}
+                    hidden
+                  />
+                </label>
+                <button
+                  className="btn btn-import"
+                  onClick={handlePasteFromWord}
+                  disabled={isReadOnly}
+                >
+                  Paste from Word
+                </button>
               </div>
               {importStatus && (
                 <div className="import-status" role="status" aria-live="polite">
                   {importStatus}
                 </div>
               )}
-              <div className="formatting-primer">
-                <div className="formatting-primer-title">Formatting primer</div>
-                <ul>
-                  <li>
-                    Load .docx, .md/.markdown, or .txt notes with Load notes
-                    file below.
-                  </li>
-                  <li>Top-level bullets or numbered lines are rooms or areas.</li>
-                  <li>Indented bullets or numbered lines become punch items.</li>
-                  <li>Select across several items to format them together.</li>
-                  <li>Underline marks new; bold marks revised; strike marks complete.</li>
-                  <li>Re-importing numbered notes keeps their photos attached.</li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="import-workspace-footer">
-              <div className="import-actions">
-              <label className="import-file-btn">
-                <svg
-                  className="import-file-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <path d="M14 2v6h6" />
-                </svg>
-                Load notes file
-                <input
-                  type="file"
-                  accept=".docx,.md,.markdown,.txt,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain"
-                  onChange={handleImportFile}
-                  hidden
-                />
-              </label>
-              <button
-                className="btn btn-import"
-                onClick={handleImportSubmit}
-                disabled={!importText.trim()}
-              >
-                <ImportIcon />
-                Import & build punch list
-              </button>
-              </div>
             </div>
           </div>
         </aside>
@@ -3115,18 +2965,17 @@ export default function PunchListApp() {
                 <path d="M14 2v6h6M9 13h6M9 17h4" />
               </svg>
             </div>
-            <div className="empty-state-kicker">Recommended workflow</div>
-            <h2 className="empty-state-heading">Write elsewhere. Import here.</h2>
+            <div className="empty-state-kicker">Start your punch list</div>
+            <h2 className="empty-state-heading">Paste once. Keep it current here.</h2>
             <p className="empty-state-body">
-              Draft in Word, Docs, Notes, or any text editor that makes writing
-              easy. Use a bullet or number for each room and indent the punch
-              items below it.
+              Paste the notes you already have, or type directly in Punch List
+              Notes. Room headings and indented items become the living list.
             </p>
             <pre className="empty-state-example">{`1. Kitchen 102
     1. Adjust cabinet reveal
     2. Touch up paint at window return`}</pre>
             <ol className="empty-state-steps">
-              <li><strong>Import</strong> your bulleted or numbered outline.</li>
+              <li><strong>Start</strong> with a bulleted or numbered outline.</li>
               <li><strong>Drag photos</strong> onto the numbered items.</li>
               <li><strong>Print or save</strong> the finished PDF.</li>
             </ol>
@@ -3136,7 +2985,7 @@ export default function PunchListApp() {
                 onClick={handleOpenImport}
               >
                 <ImportIcon />
-                Import notes
+                Open punch list notes
               </button>
               <button
                 className="btn btn-secondary empty-state-btn"
@@ -3146,8 +2995,8 @@ export default function PunchListApp() {
               </button>
             </div>
             <p className="empty-state-hint">
-              Need to catch a late item? Rooms and items can still be added
-              directly on the document after import.
+              Keep adding and removing items in Punch List Notes or directly in
+              the document; both views stay in sync.
             </p>
           </div>
         )}
