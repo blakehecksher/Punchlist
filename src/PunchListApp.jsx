@@ -6,14 +6,7 @@ import {
   idbClearProjectPhotos,
   idbDeletePhoto,
   idbCopyProjectPhotos,
-  idbSetIssueSnapshot,
-  idbGetIssueSnapshot,
-  idbCopyProjectIssueSnapshots,
 } from "./idb.js";
-import {
-  replaceIssuanceRecord,
-  startCorrectionForIssuance,
-} from "./issuanceLifecycle.js";
 import {
   convertHtmlToImportText,
   hasStructuredImportHtml,
@@ -25,7 +18,6 @@ import {
   saveProjectToFile,
   loadProjectFromFile,
   restorePhotosToIdb,
-  restoreIssueSnapshotsToIdb,
 } from "./projectFile.js";
 import {
   formatIssueCode,
@@ -36,6 +28,10 @@ import {
   normalizeItemIssueSeqs,
 } from "./issueIds.js";
 import { DEFAULT_LAYOUT, getLayoutMetrics, normalizeLayout } from "./layout.js";
+import {
+  makeDocumentEndEntry,
+  normalizeDocumentEndEntries,
+} from "./endOfPunchList.js";
 import {
   GENERAL_NOTES_SECTION_ID,
   paginateDetail,
@@ -89,48 +85,6 @@ const getCurrentDateLabel = (date = new Date()) =>
     day: "numeric",
     year: "numeric",
   }).format(date);
-const makeIssuanceState = () => ({
-  locked: false,
-  draftMode: "initial",
-  correctionTargetId: null,
-  draftTitle: null,
-  newMarkerBaselineVersion: 1,
-  history: [],
-});
-const normalizeIssuance = (issuance) => ({
-  ...makeIssuanceState(),
-  ...(issuance ?? {}),
-  history: Array.isArray(issuance?.history) ? issuance.history : [],
-});
-const getDefaultIssuanceTitle = (issueNumber, revision = 0) => {
-  if (revision > 0) return `Correction ${revision}`;
-  return issueNumber > 1 ? `Punch List ${issueNumber}` : "Punch List";
-};
-const getIssuanceTitle = (record) => {
-  if (!record) return "";
-  if (Object.prototype.hasOwnProperty.call(record, "title")) {
-    return record.title ?? "";
-  }
-  return getDefaultIssuanceTitle(record.issueNumber ?? 1, record.revision ?? 0);
-};
-const getIssuedDateLabel = (issuedAt) => {
-  const date = new Date(issuedAt);
-  if (Number.isNaN(date.getTime())) return "Date unavailable";
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-};
-const countDocumentItems = (data) =>
-  data.generalNotes.length +
-  data.rooms.reduce((total, room) => total + room.items.length, 0);
-const countDocumentPhotos = (data) =>
-  [...data.generalNotes, ...data.rooms.flatMap((room) => room.items)].filter(
-    (item) => Boolean(item.photo),
-  ).length;
 const PUNCH_LIST_TEMPLATE = `- Site Conditions
     - Site condition 1
     - Site condition 2
@@ -232,9 +186,7 @@ function buildIssueCodeIndex(items, kind, title) {
 }
 
 function mergeImportedNotes(state, payload) {
-  const allowNewMarkers = normalizeIssuance(state.issuance).history.length > 0;
-  const importedIsNew = (imported) =>
-    allowNewMarkers && Boolean(imported.isNew);
+  const importedIsNew = () => false;
   const rooms = state.rooms.map((room) => ({
     ...room,
     items: [...room.items],
@@ -430,7 +382,7 @@ function makeBlankProjectData() {
     generalNotesTitle: "General",
     headerNote: DEFAULT_HEADER_NOTE,
     layout: { ...DEFAULT_LAYOUT },
-    issuance: makeIssuanceState(),
+    endOfPunchListEntries: [],
     nextGeneralIssueSeq: 1,
     siteConditions: [],
     generalNotes: [],
@@ -713,16 +665,16 @@ function refreshExampleFixture(stored) {
 }
 
 function normalizeStoredData(stored, photos = {}) {
-  const shouldClearLegacyNewMarkers = Boolean(
-    !stored?.isExample &&
-      stored?.issuance?.history?.length > 0 &&
-      stored?.issuance?.newMarkerBaselineVersion !== 1,
-  );
+  const {
+    issuance: _unusedIssuance,
+    endOfPunchListDates: _unusedEndDates,
+    ...storedWithoutLegacyEndData
+  } = stored ?? {};
   const mergePhotos = (items = []) =>
     items.map((item) => {
       const normalizedItem = {
         ...item,
-        isNew: shouldClearLegacyNewMarkers ? false : Boolean(item.isNew),
+        isNew: false,
       };
       const entry = photos[item.id];
       if (!entry) return { ...normalizedItem, photo: null, photoPosition: null };
@@ -772,12 +724,12 @@ function normalizeStoredData(stored, photos = {}) {
 
   const normalized = withIssueSequences({
     ...makeBlankProjectData(),
-    ...stored,
+    ...storedWithoutLegacyEndData,
     project,
     projectNum,
     firm,
     layout: normalizeLayout(stored?.layout),
-    issuance: normalizeIssuance(stored?.issuance),
+    endOfPunchListEntries: normalizeDocumentEndEntries(stored),
     punchlistDate: stored?.punchlistDate ?? "",
     generalNotesTitle: stored?.generalNotesTitle ?? "General",
     siteConditions: stored?.siteConditions || [],
@@ -788,40 +740,29 @@ function normalizeStoredData(stored, photos = {}) {
     })),
   });
 
-  if (normalized.isExample || normalized.issuance.history.length > 0) {
-    return normalized;
-  }
-
-  return {
-    ...normalized,
-    generalNotes: normalized.generalNotes.map((item) => ({
-      ...item,
-      isNew: false,
-    })),
-    rooms: normalized.rooms.map((room) => ({
-      ...room,
-      items: room.items.map((item) => ({ ...item, isNew: false })),
-    })),
-  };
+  return normalized;
 }
 
-const stripPhotos = (data) => ({
-  ...data,
-  layout: normalizeLayout(data.layout),
-  generalNotes: data.generalNotes.map((item) => ({
-    ...item,
-    photo: null,
-    photoPosition: null,
-  })),
-  rooms: data.rooms.map((room) => ({
-    ...room,
-    items: room.items.map((item) => ({
+const stripPhotos = (data) => {
+  const { issuance: _unusedIssuance, ...dataWithoutIssuance } = data;
+  return {
+    ...dataWithoutIssuance,
+    layout: normalizeLayout(data.layout),
+    generalNotes: data.generalNotes.map((item) => ({
       ...item,
       photo: null,
       photoPosition: null,
     })),
-  })),
-});
+    rooms: data.rooms.map((room) => ({
+      ...room,
+      items: room.items.map((item) => ({
+        ...item,
+        photo: null,
+        photoPosition: null,
+      })),
+    })),
+  };
+};
 
 function mapItem(data, id, fn) {
   const inGN = data.generalNotes.some((item) => item.id === id);
@@ -860,33 +801,6 @@ function reducer(state, action) {
         }),
       };
 
-    case "setIssuance":
-      return {
-        ...state,
-        issuance: normalizeIssuance({
-          ...normalizeIssuance(state.issuance),
-          ...action.issuance,
-        }),
-      };
-
-    case "startIssuanceDraft":
-      return {
-        ...state,
-        generalNotes: state.generalNotes.map((item) => ({
-          ...item,
-          isNew: false,
-        })),
-        rooms: state.rooms.map((room) => ({
-          ...room,
-          items: room.items.map((item) => ({ ...item, isNew: false })),
-        })),
-        issuance: normalizeIssuance({
-          ...normalizeIssuance(state.issuance),
-          ...action.issuance,
-          newMarkerBaselineVersion: 1,
-        }),
-      };
-
     case "setSiteCondition": {
       const next = [...state.siteConditions];
       next[action.index] = action.value;
@@ -903,6 +817,29 @@ function reducer(state, action) {
 
     case "addSiteCondition":
       return { ...state, siteConditions: [...state.siteConditions, ""] };
+
+    case "setDocumentEndEntry": {
+      const next = [...state.endOfPunchListEntries];
+      next[action.index] = action.value;
+      return { ...state, endOfPunchListEntries: next };
+    }
+
+    case "removeDocumentEndEntry":
+      return {
+        ...state,
+        endOfPunchListEntries: state.endOfPunchListEntries.filter(
+          (_, index) => index !== action.index,
+        ),
+      };
+
+    case "addDocumentEndEntry":
+      return {
+        ...state,
+        endOfPunchListEntries: [
+          ...state.endOfPunchListEntries,
+          makeDocumentEndEntry(state.date),
+        ],
+      };
 
     case "updateItem":
       return mapItem(state, action.id, (item) => ({
@@ -933,11 +870,7 @@ function reducer(state, action) {
         nextGeneralIssueSeq: nextIssueSeq + 1,
         generalNotes: [
           ...state.generalNotes,
-          makeItem(
-            "",
-            nextIssueSeq,
-            normalizeIssuance(state.issuance).history.length > 0,
-          ),
+          makeItem("", nextIssueSeq),
         ],
       };
     }
@@ -969,11 +902,7 @@ function reducer(state, action) {
                   nextItemIssueSeq: nextIssueSeq + 1,
                   items: [
                     ...room.items,
-                    makeItem(
-                      "",
-                      nextIssueSeq,
-                      normalizeIssuance(state.issuance).history.length > 0,
-                    ),
+                    makeItem("", nextIssueSeq),
                   ],
                 };
               })(),
@@ -1006,11 +935,7 @@ function reducer(state, action) {
         ...state,
         rooms: [
           ...state.rooms,
-          makeRoom(
-            "Room Name",
-            "",
-            normalizeIssuance(state.issuance).history.length > 0,
-          ),
+          makeRoom("Room Name"),
         ],
       };
 
@@ -1034,7 +959,6 @@ function reducer(state, action) {
         title: state.title,
         date: state.date,
         firm: state.firm,
-        issuance: normalizeIssuance(state.issuance),
         // Density / summary / photo toggles are view preferences, not punch
         // list content, so clearing the body should not reset them.
         layout: normalizeLayout(state.layout),
@@ -1099,10 +1023,6 @@ export default function PunchListApp() {
   const [clearConfirm, setClearConfirm] = useState(false);
   const clearTimer = useRef(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [snapshotView, setSnapshotView] = useState(null);
-  const [issuanceEdit, setIssuanceEdit] = useState(null);
-  const [fixDecisionOpen, setFixDecisionOpen] = useState(false);
-  const issuanceFooterRef = useRef(null);
 
   const [activeId, setActiveIdState] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -1160,7 +1080,7 @@ export default function PunchListApp() {
   }, []);
 
   useEffect(() => {
-    if (!activeIdRef.current || snapshotView || issuanceEdit) return;
+    if (!activeIdRef.current) return;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       try {
@@ -1173,7 +1093,7 @@ export default function PunchListApp() {
       }
     }, 800);
     return () => clearTimeout(saveTimer.current);
-  }, [data, issuanceEdit, snapshotView]);
+  }, [data]);
 
   useEffect(() => {
     try {
@@ -1196,13 +1116,12 @@ export default function PunchListApp() {
   }, []);
 
   const discardPhotos = useCallback((items = []) => {
-    if (issuanceEdit) return;
     const projectId = activeIdRef.current;
     if (!projectId) return;
     items.forEach((item) => {
       if (item?.id) idbDeletePhoto(projectId, item.id).catch(() => {});
     });
-  }, [issuanceEdit]);
+  }, []);
 
   const handlePositionChange = useCallback(
     (itemId, position) => {
@@ -1221,23 +1140,18 @@ export default function PunchListApp() {
       };
 
       const dataUrl = findPhoto();
-      if (dataUrl && activeIdRef.current && !issuanceEdit) {
+      if (dataUrl && activeIdRef.current) {
         idbSetPhoto(activeIdRef.current, itemId, { dataUrl, position }).catch(
           () => {},
         );
       }
     },
-    [data, issuanceEdit],
+    [data],
   );
 
   const switchToProject = useCallback(
     async (id) => {
-      persistActiveProject(
-        issuanceEdit?.workingData ?? snapshotView?.workingData ?? data,
-      );
-      setSnapshotView(null);
-      setIssuanceEdit(null);
-      setFixDecisionOpen(false);
+      persistActiveProject(data);
 
       activeIdRef.current = id;
       setActiveIdState(id);
@@ -1266,16 +1180,11 @@ export default function PunchListApp() {
       refreshIndex();
       setSidebarOpen(false);
     },
-    [data, issuanceEdit, persistActiveProject, snapshotView],
+    [data, persistActiveProject],
   );
 
   const handleNewProject = useCallback(() => {
-    persistActiveProject(
-      issuanceEdit?.workingData ?? snapshotView?.workingData ?? data,
-    );
-    setSnapshotView(null);
-    setIssuanceEdit(null);
-    setFixDecisionOpen(false);
+    persistActiveProject(data);
 
     const blankData = makeBlankProjectData();
     const id = createProject(blankData);
@@ -1289,11 +1198,10 @@ export default function PunchListApp() {
     setImportStatus("");
     setImportOpen(true);
     setHelpOpen(false);
-  }, [data, issuanceEdit, persistActiveProject, snapshotView]);
+  }, [data, persistActiveProject]);
 
   const handleDuplicate = useCallback(async () => {
-    const sourceData =
-      issuanceEdit?.workingData ?? snapshotView?.workingData ?? data;
+    const sourceData = data;
     persistActiveProject(sourceData);
 
     const sourceId = activeIdRef.current;
@@ -1309,7 +1217,6 @@ export default function PunchListApp() {
     // Item IDs carry over, so the photos have to be copied under the new
     // project's key namespace or the duplicate comes out with none.
     await idbCopyProjectPhotos(sourceId, id).catch(() => {});
-    await idbCopyProjectIssueSnapshots(sourceId, id).catch(() => {});
 
     activeIdRef.current = id;
     setActiveIdState(id);
@@ -1318,12 +1225,9 @@ export default function PunchListApp() {
       type: "load",
       data: { ...sourceData, project: copy.project, date: copy.date },
     });
-    setSnapshotView(null);
-    setIssuanceEdit(null);
-    setFixDecisionOpen(false);
     refreshIndex();
     setSidebarOpen(false);
-  }, [data, issuanceEdit, persistActiveProject, snapshotView]);
+  }, [data, persistActiveProject]);
 
   const handleDeleteProject = useCallback(async (id) => {
     const wasActive = activeIdRef.current === id;
@@ -1515,11 +1419,7 @@ export default function PunchListApp() {
       event.target.value = "";
 
       try {
-        const {
-          data: fileData,
-          photos,
-          issueSnapshots,
-        } = await loadProjectFromFile(file);
+        const { data: fileData, photos } = await loadProjectFromFile(file);
 
         // Save current project first
         persistActiveProject(data);
@@ -1532,7 +1432,6 @@ export default function PunchListApp() {
 
         // Restore photos into IndexedDB
         await restorePhotosToIdb(id, photos);
-        await restoreIssueSnapshotsToIdb(id, issueSnapshots);
 
         // Load with photos merged in
         const normalizedPhotos = await idbGetAllPhotos(id);
@@ -1554,328 +1453,11 @@ export default function PunchListApp() {
     [data, persistActiveProject],
   );
 
-  const handleStartNextIssue = useCallback(() => {
-    const current = normalizeIssuance(data.issuance);
-    const nextNumber =
-      Math.max(
-        0,
-        ...current.history.map((entry) => entry.issueNumber ?? 0),
-      ) + 1;
-    dispatch({
-      type: "startIssuanceDraft",
-      issuance: {
-        locked: false,
-        draftMode: current.history.length > 0 ? "next" : "initial",
-        correctionTargetId: null,
-        draftTitle: getDefaultIssuanceTitle(nextNumber, 0),
-      },
-    });
-    setFixDecisionOpen(false);
-    setSaveStatus("Next issue opened for editing");
-    setTimeout(() => setSaveStatus(""), 1800);
-  }, [data.issuance]);
-
-  const handleIssueAndPrint = useCallback(async () => {
-    const projectId = activeIdRef.current;
-    if (!projectId) return;
-
-    const current = normalizeIssuance(data.issuance);
-    const correctionTarget =
-      current.draftMode === "correction"
-        ? current.history.find(
-            (entry) => entry.id === current.correctionTargetId,
-          ) ?? current.history[current.history.length - 1]
-        : null;
-    const issueNumber = correctionTarget
-      ? correctionTarget.issueNumber
-      : Math.max(0, ...current.history.map((entry) => entry.issueNumber ?? 0)) + 1;
-    const revision = correctionTarget
-      ? Math.max(
-          0,
-          ...current.history
-            .filter((entry) => entry.issueNumber === issueNumber)
-            .map((entry) => entry.revision ?? 0),
-        ) + 1
-      : 0;
-    const issuedAt = new Date().toISOString();
-    const id = uid();
-    const record = {
-      id,
-      issueNumber,
-      revision,
-      title:
-        current.draftTitle ?? getDefaultIssuanceTitle(issueNumber, revision),
-      issuedAt,
-      itemCount: countDocumentItems(data),
-      photoCount: countDocumentPhotos(data),
-      supersedesId: correctionTarget?.id ?? null,
-    };
-    const issuance = {
-      locked: true,
-      draftMode: null,
-      correctionTargetId: null,
-      draftTitle: null,
-      history: [...current.history, record],
-    };
-    const snapshot = { ...data, issuance };
-
-    try {
-      await idbSetIssueSnapshot(projectId, id, snapshot);
-      clearTimeout(saveTimer.current);
-      persistActiveProject(snapshot);
-      dispatch({ type: "load", data: snapshot });
-      setImportOpen(false);
-      setHelpOpen(false);
-      setFixDecisionOpen(false);
-      setSaveStatus("Issuance recorded and punch list locked");
-      setTimeout(() => setSaveStatus(""), 2200);
-
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => window.print());
-      });
-    } catch {
-      setSaveStatus("Issue could not be saved");
-      setTimeout(() => setSaveStatus(""), 3000);
-    }
-  }, [data, persistActiveProject]);
-
   const handlePreviewAndPrint = useCallback(() => {
     setImportOpen(false);
     setHelpOpen(false);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => window.print());
-    });
-  }, []);
-
-  const handleOpenHistoricalIssue = useCallback(
-    async (record, { print = false } = {}) => {
-      const projectId = activeIdRef.current;
-      if (!projectId) return;
-
-      try {
-        const snapshot = await idbGetIssueSnapshot(projectId, record.id);
-        if (!snapshot) throw new Error("Snapshot unavailable");
-        const workingData =
-          issuanceEdit?.workingData ?? snapshotView?.workingData ?? data;
-        const currentTitles = new Map(
-          normalizeIssuance(workingData.issuance).history.map((entry) => [
-            entry.id,
-            getIssuanceTitle(entry),
-          ]),
-        );
-        const snapshotIssuance = normalizeIssuance(snapshot.issuance);
-        const snapshotWithTitles = {
-          ...snapshot,
-          issuance: {
-            ...snapshotIssuance,
-            history: snapshotIssuance.history.map((entry) =>
-              currentTitles.has(entry.id)
-                ? { ...entry, title: currentTitles.get(entry.id) }
-                : entry,
-            ),
-          },
-        };
-
-        clearTimeout(saveTimer.current);
-        persistActiveProject(workingData);
-        setSnapshotView({ record, workingData });
-        setIssuanceEdit(null);
-        dispatch({ type: "load", data: snapshotWithTitles });
-        setImportOpen(false);
-        setHelpOpen(false);
-        setFixDecisionOpen(false);
-        setSaveStatus(`Viewing ${getIssuanceTitle(record) || "issued snapshot"}`);
-        setTimeout(() => setSaveStatus(""), 1800);
-
-        if (print) {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => window.print());
-          });
-        }
-      } catch {
-        setSaveStatus("That issued snapshot is unavailable");
-        setTimeout(() => setSaveStatus(""), 3000);
-      }
-    },
-    [data, issuanceEdit, persistActiveProject, snapshotView],
-  );
-
-  const handleReturnFromSnapshot = useCallback(() => {
-    if (!snapshotView?.workingData) return;
-    dispatch({ type: "load", data: snapshotView.workingData });
-    setSnapshotView(null);
-    setSaveStatus("Returned to working document");
-    setTimeout(() => setSaveStatus(""), 1600);
-  }, [snapshotView]);
-
-  const handleEditIssuedVersion = useCallback(async () => {
-    const projectId = activeIdRef.current;
-    if (!projectId) return;
-    const workingData = snapshotView?.workingData ?? data;
-    const workingIssuance = normalizeIssuance(workingData.issuance);
-    const target =
-      snapshotView?.record ?? workingIssuance.history.at(-1) ?? null;
-    if (!target) return;
-
-    try {
-      const source = snapshotView
-        ? data
-        : await idbGetIssueSnapshot(projectId, target.id);
-      if (!source) throw new Error("Snapshot unavailable");
-      const editData = {
-        ...source,
-        issuance: {
-          ...workingIssuance,
-          locked: false,
-          draftMode: null,
-          correctionTargetId: null,
-          draftTitle: null,
-        },
-      };
-      clearTimeout(saveTimer.current);
-      persistActiveProject(workingData);
-      setIssuanceEdit({ record: target, workingData });
-      setSnapshotView(null);
-      setFixDecisionOpen(false);
-      dispatch({ type: "load", data: editData });
-      setSaveStatus(`Editing ${getIssuanceTitle(target) || "issued version"}`);
-      setTimeout(() => setSaveStatus(""), 2000);
-    } catch {
-      setSaveStatus("That issued snapshot is unavailable");
-      setTimeout(() => setSaveStatus(""), 3000);
-    }
-  }, [data, persistActiveProject, snapshotView]);
-
-  const handleCreateCorrectionFromSelected = useCallback(async () => {
-    const projectId = activeIdRef.current;
-    if (!projectId) return;
-    const workingData = snapshotView?.workingData ?? data;
-    const current = normalizeIssuance(workingData.issuance);
-    const target = snapshotView?.record ?? current.history.at(-1) ?? null;
-    if (!target) return;
-    const nextRevision =
-      Math.max(
-        0,
-        ...current.history
-          .filter((entry) => entry.issueNumber === target.issueNumber)
-          .map((entry) => entry.revision ?? 0),
-      ) + 1;
-    const result = startCorrectionForIssuance(
-      current,
-      target.id,
-      getDefaultIssuanceTitle(target.issueNumber ?? 1, nextRevision),
-    );
-
-    try {
-      const source = snapshotView
-        ? data
-        : await idbGetIssueSnapshot(projectId, target.id);
-      if (!source || !result.target) throw new Error("Snapshot unavailable");
-      const correctionData = { ...source, issuance: result.issuance };
-      clearTimeout(saveTimer.current);
-      persistActiveProject(correctionData);
-      dispatch({ type: "load", data: correctionData });
-      setSnapshotView(null);
-      setIssuanceEdit(null);
-      setFixDecisionOpen(false);
-      setSaveStatus("Correction draft opened from selected issuance");
-      setTimeout(() => setSaveStatus(""), 2400);
-    } catch {
-      setSaveStatus("That issued snapshot is unavailable");
-      setTimeout(() => setSaveStatus(""), 3000);
-    }
-  }, [data, persistActiveProject, snapshotView]);
-
-  const handleSaveIssuedVersion = useCallback(async () => {
-    const projectId = activeIdRef.current;
-    if (!projectId || !issuanceEdit) return;
-    const current = normalizeIssuance(data.issuance);
-    const selected = current.history.find(
-      (record) => record.id === issuanceEdit.record.id,
-    );
-    const result = replaceIssuanceRecord(current, issuanceEdit.record.id, {
-      title: getIssuanceTitle(selected ?? issuanceEdit.record),
-      itemCount: countDocumentItems(data),
-      photoCount: countDocumentPhotos(data),
-    });
-    if (!result.record) return;
-    const selectedIndex = result.issuance.history.findIndex(
-      (record) => record.id === result.record.id,
-    );
-    const snapshot = {
-      ...data,
-      issuance: {
-        ...result.issuance,
-        locked: true,
-        draftMode: null,
-        correctionTargetId: null,
-        draftTitle: null,
-        history: result.issuance.history.slice(0, selectedIndex + 1),
-      },
-    };
-    const originalWorkingIssuance = normalizeIssuance(
-      issuanceEdit.workingData.issuance,
-    );
-    const isLatest = originalWorkingIssuance.history.at(-1)?.id === result.record.id;
-    const nextWorkingData =
-      isLatest && originalWorkingIssuance.locked
-        ? snapshot
-        : {
-            ...issuanceEdit.workingData,
-            issuance: {
-              ...originalWorkingIssuance,
-              history: result.issuance.history,
-            },
-          };
-
-    try {
-      await idbSetIssueSnapshot(projectId, result.record.id, snapshot);
-      clearTimeout(saveTimer.current);
-      persistActiveProject(nextWorkingData);
-      setIssuanceEdit(null);
-      setSnapshotView({ record: result.record, workingData: nextWorkingData });
-      setFixDecisionOpen(false);
-      dispatch({ type: "load", data: snapshot });
-      setSaveStatus("Issued version updated");
-      setTimeout(() => setSaveStatus(""), 2200);
-    } catch {
-      setSaveStatus("Issued version could not be updated");
-      setTimeout(() => setSaveStatus(""), 3000);
-    }
-  }, [data, issuanceEdit, persistActiveProject]);
-
-  const handleCancelIssuedVersionEdit = useCallback(() => {
-    if (!issuanceEdit?.workingData) return;
-    dispatch({ type: "load", data: issuanceEdit.workingData });
-    setIssuanceEdit(null);
-    setFixDecisionOpen(false);
-    setSaveStatus("Issued version edit canceled");
-    setTimeout(() => setSaveStatus(""), 1600);
-  }, [issuanceEdit]);
-
-  const handleSetIssuanceTitle = useCallback(
-    (recordId, title) => {
-      const current = normalizeIssuance(data.issuance);
-      dispatch({
-        type: "setIssuance",
-        issuance: {
-          history: current.history.map((entry) =>
-            entry.id === recordId ? { ...entry, title } : entry,
-          ),
-        },
-      });
-    },
-    [data.issuance],
-  );
-
-  const handleJumpToIssuances = useCallback(() => {
-    setImportOpen(false);
-    setHelpOpen(false);
-    requestAnimationFrame(() => {
-      issuanceFooterRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
     });
   }, []);
 
@@ -1911,46 +1493,6 @@ export default function PunchListApp() {
       });
     });
   }, []);
-
-  const issuance = normalizeIssuance(data.issuance);
-  const latestIssue = issuance.history[issuance.history.length - 1] ?? null;
-  const workingIssuance = normalizeIssuance(
-    issuanceEdit?.workingData?.issuance ??
-      snapshotView?.workingData?.issuance ??
-      data.issuance,
-  );
-  const sidebarSnapshots = workingIssuance.history.map((record) => ({
-    ...record,
-    displayTitle: getIssuanceTitle(record),
-    displayDate: getIssuedDateLabel(record.issuedAt),
-  }));
-  const selectedIssuedVersion =
-    issuanceEdit?.record ?? snapshotView?.record ?? latestIssue;
-  const isReadOnly = Boolean(!issuanceEdit && (issuance.locked || snapshotView));
-  const nextIssueNumber =
-    Math.max(0, ...issuance.history.map((entry) => entry.issueNumber ?? 0)) + 1;
-  const pendingCorrectionRevision =
-    issuance.draftMode === "correction" && latestIssue
-      ? Math.max(
-          0,
-          ...issuance.history
-            .filter((entry) => entry.issueNumber === latestIssue.issueNumber)
-            .map((entry) => entry.revision ?? 0),
-        ) + 1
-      : 0;
-  const draftIssuanceTitle =
-    issuance.draftTitle ??
-    getDefaultIssuanceTitle(
-      issuance.draftMode === "correction"
-        ? (latestIssue?.issueNumber ?? 1)
-        : nextIssueNumber,
-      pendingCorrectionRevision,
-    );
-  const printButtonLabel = snapshotView
-    ? "Print snapshot"
-    : issuanceEdit
-      ? "Preview updated PDF"
-    : "Preview / Print PDF";
 
   const layout = normalizeLayout(data.layout);
   const layoutMetrics = getLayoutMetrics(layout);
@@ -1988,17 +1530,12 @@ export default function PunchListApp() {
     : [];
   const detailPages = paginateDetail(data, layout, {
     includeSiteConditions: summaryPages.length === 0,
-    includeIssuanceEnd: true,
+    includeDocumentEnd: true,
   });
   const pages = [
     ...summaryPages.map((segments) => ({ kind: "summary", segments })),
     ...detailPages.map((segments) => ({ kind: "detail", segments })),
   ];
-  const lastDetailPageIndex = pages.reduce(
-    (lastIndex, page, index) => (page.kind === "detail" ? index : lastIndex),
-    -1,
-  );
-
   const firstSectionChunk = {};
   const lastSectionChunk = {};
   pages
@@ -2122,7 +1659,7 @@ export default function PunchListApp() {
         isCompleted: containsInlineTag(item.description, "s"),
       })}
       density={layout.density}
-      persistPhotos={!issuanceEdit}
+      persistPhotos
       onDescChange={(value) =>
         dispatch({
           type: "updateItem",
@@ -2506,50 +2043,60 @@ export default function PunchListApp() {
     );
   };
 
-  const renderDocumentIssuanceEnd = (key) => {
-    const issuanceColumns = [];
-    for (let index = 0; index < issuance.history.length; index += 10) {
-      issuanceColumns.push(issuance.history.slice(index, index + 10));
-    }
-
-    return (
-      <div className="document-issuance-end" key={key}>
-        <div className="document-issuance-rule" />
-        <div className="document-issuance-title">End of Punch List</div>
-        {layout.showIssuances && (
-          <div className="document-issuance-lines">
-            {issuanceColumns.map((records, columnIndex) => (
-                <div
-                  className="document-issuance-column"
-                  key={`issuance-column-${columnIndex}`}
-                >
-                  {records.map((record) => {
-                    const title = getIssuanceTitle(record).trim();
-                    return (
-                      <div className="document-issuance-line" key={record.id}>
-                        {title ? `${title} issued` : "Issued"}{" "}
-                        {getCurrentDateLabel(new Date(record.issuedAt))}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            {!issuance.locked && !snapshotView && (
-              <div className="document-issuance-line document-issuance-line--draft">
-                Working copy · Not recorded as issued.
-              </div>
-            )}
-          </div>
-        )}
+  const renderDocumentEnd = (key) => (
+    <div className="document-end-group" key={key}>
+      <button className="add-room-btn" onClick={handleAddRoom} type="button">
+        + Add room
+      </button>
+      <div className="document-end">
+        <div className="document-end-rule" />
+        <div className="document-end-title">End of Punch List</div>
+        <ul className="site-list document-end-list">
+          {data.endOfPunchListEntries.map((entry, index) => (
+            <li className="site-item document-end-item" key={index}>
+              <span className="site-bullet">-</span>
+              <input
+                className="site-input document-end-entry-input"
+                type="text"
+                value={entry}
+                onChange={(event) =>
+                  dispatch({
+                    type: "setDocumentEndEntry",
+                    index,
+                    value: event.target.value,
+                  })
+                }
+                placeholder="Punch List issued [date]"
+                aria-label={`End of Punch List entry ${index + 1}`}
+              />
+              <button
+                className="site-remove"
+                onClick={() =>
+                  dispatch({ type: "removeDocumentEndEntry", index })
+                }
+                type="button"
+                aria-label={`Remove End of Punch List entry ${index + 1}`}
+              >
+                x
+              </button>
+            </li>
+          ))}
+        </ul>
+        <button
+          className="add-inline document-end-add"
+          onClick={() => dispatch({ type: "addDocumentEndEntry" })}
+          type="button"
+        >
+          + Add issue date
+        </button>
       </div>
-    );
-  };
+    </div>
+  );
 
   const renderDetailPage = (
     segments,
     pageIdx,
     totalPages,
-    isLastDetailPage,
   ) => {
     const headerSegs = segments.filter(
       (seg) => seg.type === "header" || seg.type === "siteConditions",
@@ -2564,7 +2111,7 @@ export default function PunchListApp() {
       ? Math.max(
           1,
           contentSegs.filter(
-            (seg) => seg.type === "rowGroup" || seg.type === "issuanceEnd",
+            (seg) => seg.type === "rowGroup" || seg.type === "documentEnd",
           ).length,
         )
       : layoutMetrics.otherPageRows;
@@ -2602,9 +2149,9 @@ export default function PunchListApp() {
                   `page-${pageIdx}-row-${segIdx}`,
                 );
               }
-              if (seg.type === "issuanceEnd") {
-                return renderDocumentIssuanceEnd(
-                  `page-${pageIdx}-issuance-${segIdx}`,
+              if (seg.type === "documentEnd") {
+                return renderDocumentEnd(
+                  `page-${pageIdx}-end-${segIdx}`,
                 );
               }
               return renderEmptySection(
@@ -2613,14 +2160,6 @@ export default function PunchListApp() {
               );
             })}
           </div>
-          {isLastDetailPage && (
-            <button
-              className="add-room-btn"
-              onClick={handleAddRoom}
-            >
-              + Add room
-            </button>
-          )}
         </div>
       </div>
     );
@@ -2633,8 +2172,6 @@ export default function PunchListApp() {
         sidebarOpen ? "app--sidebar-open" : "",
         importOpen ? "app--import-open" : "",
         data.isExample ? "app--example" : "",
-        issuance.locked ? "app--locked" : "",
-        snapshotView || issuanceEdit ? "app--snapshot-view" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -2661,16 +2198,6 @@ export default function PunchListApp() {
         onLoadFromFile={handleLoadFromFile}
         onClear={handleClearAll}
         clearConfirm={clearConfirm}
-        readOnly={isReadOnly}
-        issuedSnapshots={sidebarSnapshots}
-        activeSnapshotId={
-          issuanceEdit?.record.id ?? snapshotView?.record.id ?? null
-        }
-        onOpenSnapshot={handleOpenHistoricalIssue}
-        onReturnToWorking={
-          issuanceEdit ? handleCancelIssuedVersionEdit : handleReturnFromSnapshot
-        }
-        snapshotNavigationDisabled={Boolean(issuanceEdit)}
       />
 
       <div className="toolbar">
@@ -2728,103 +2255,19 @@ export default function PunchListApp() {
             title="Import notes"
             aria-expanded={importOpen}
             aria-controls="import-workspace"
-            disabled={isReadOnly}
           >
             <ImportIcon />
             Import notes
-          </button>
-          <button
-            className="btn btn-secondary btn-issuance-jump"
-            onClick={handleJumpToIssuances}
-            type="button"
-          >
-            Issuances
           </button>
           <button
             className="btn btn-print"
             onClick={handlePreviewAndPrint}
           >
             <DocumentIcon />
-            {printButtonLabel}
+            Preview / Print PDF
           </button>
         </div>
       </div>
-
-      {snapshotView && (
-        <div className="snapshot-view-banner" role="status">
-          <div className="snapshot-view-copy">
-            <strong>
-              Viewing issued snapshot: {getIssuanceTitle(snapshotView.record) || "Untitled issuance"}
-            </strong>
-            <span>
-              Issued {getIssuedDateLabel(snapshotView.record.issuedAt)}. You
-              can reprint it, edit it in place, or create a correction from it.
-            </span>
-          </div>
-          <div className="snapshot-view-actions">
-            <button
-              className="btn btn-secondary"
-              onClick={handlePreviewAndPrint}
-              type="button"
-            >
-              Reprint snapshot
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={() => {
-                setFixDecisionOpen(true);
-                requestAnimationFrame(() => {
-                  issuanceFooterRef.current?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "center",
-                  });
-                });
-              }}
-              type="button"
-              aria-expanded={fixDecisionOpen}
-            >
-              Fix issued version
-            </button>
-            <button
-              className="btn btn-print"
-              onClick={handleReturnFromSnapshot}
-              type="button"
-            >
-              Back to current document
-            </button>
-          </div>
-        </div>
-      )}
-
-      {issuanceEdit && (
-        <div className="snapshot-view-banner snapshot-view-banner--editing" role="status">
-          <div className="snapshot-view-copy">
-            <strong>
-              Editing issued version: {getIssuanceTitle(issuanceEdit.record) || "Untitled issuance"}
-            </strong>
-            <span>
-              Saving updates this selected issuance in place. Other issued
-              versions are unchanged.
-            </span>
-          </div>
-          <div className="snapshot-view-actions">
-            <button
-              className="btn btn-secondary"
-              onClick={handleCancelIssuedVersionEdit}
-              type="button"
-            >
-              Cancel
-            </button>
-            <button
-              className="btn btn-print"
-              onClick={handleSaveIssuedVersion}
-              type="button"
-            >
-              Save issued version
-            </button>
-          </div>
-        </div>
-      )}
 
       {helpOpen && (
         <div className="help-panel">
@@ -2858,8 +2301,8 @@ export default function PunchListApp() {
                   area or drag images in from a folder.
                 </>,
                 <>
-                  <strong>Preview or print freely.</strong> When the document is
-                  formally ready, record it as issued to save a dated snapshot.
+                  <strong>Add the issue date and save the PDF.</strong> The PDF is the
+                  record of that version; the punch list stays editable.
                 </>,
               ].map((text, i) => (
                 <li key={i}>
@@ -2890,12 +2333,10 @@ export default function PunchListApp() {
               detaching their photos.
             </p>
             <div className="help-issue-callout">
-              <strong>Printing and issuing are separate</strong>
+              <strong>The PDF is your saved version</strong>
               <span>
-                Preview / Print PDF never locks the project or adds history.
-                Record as issued only when the version is formal. If something
-                is wrong afterward, reopen an undistributed copy or create a
-                correction for one that was already sent.
+                Use Add issue date at the end of the punch list, then use
+                Preview / Print PDF. The app keeps one editable working document.
               </span>
             </div>
           </div>
@@ -3082,11 +2523,7 @@ export default function PunchListApp() {
         </section>
       )}
 
-      <div
-        className="pages"
-        inert={isReadOnly ? true : undefined}
-        aria-disabled={isReadOnly || undefined}
-      >
+      <div className="pages">
         {pages.map((page, pageIdx) =>
           page.kind === "summary"
             ? renderSummaryPage(page.segments, pageIdx, pages.length)
@@ -3094,7 +2531,6 @@ export default function PunchListApp() {
                 page.segments,
                 pageIdx,
                 pages.length,
-                pageIdx === lastDetailPageIndex,
               ),
         )}
         {data.rooms.length === 0 &&
@@ -3153,265 +2589,6 @@ export default function PunchListApp() {
         )}
       </div>
 
-      <section
-        className="issuance-footer"
-        id="issuance-record"
-        ref={issuanceFooterRef}
-        aria-labelledby="issuances-title"
-      >
-        <div className="issuance-footer-main">
-          <div className="issuance-heading-block">
-            <h2 id="issuances-title">Issuances</h2>
-          </div>
-          <div className="issuance-status-copy">
-            {issuanceEdit ? (
-              <>
-                <strong>
-                  Editing {getIssuanceTitle(issuanceEdit.record) || "issued version"}.
-                </strong>
-                <span>
-                  Changes will replace this selected snapshot only. Its issue
-                  date and place in the history stay the same.
-                </span>
-              </>
-            ) : snapshotView ? (
-              <>
-                <strong>
-                  Viewing {getIssuanceTitle(snapshotView.record) || "issued snapshot"}.
-                </strong>
-                <span>
-                  Reprint it as saved, edit this version directly, or create a
-                  correction from it.
-                </span>
-              </>
-            ) : issuance.locked && latestIssue ? (
-              <>
-                <strong>This punch list is recorded as issued.</strong>
-                <span>
-                  {getIssuanceTitle(latestIssue) || "Untitled issuance"} · Issued{" "}
-                  {getIssuedDateLabel(latestIssue.issuedAt)}. Fix this version
-                  or start the next punch list when more work begins.
-                </span>
-              </>
-            ) : issuance.draftMode === "correction" && latestIssue ? (
-              <>
-                <strong>Correction draft is open.</strong>
-                <span>
-                  Preview and print freely while you make the change. Record it
-                  as issued only when the correction is formally ready.
-                </span>
-              </>
-            ) : issuance.history.length > 0 ? (
-              <>
-                <strong>The working document is open.</strong>
-                <span>
-                  Preview and print without changing the issuance record. When
-                  it is formal, record this version as issued.
-                </span>
-              </>
-            ) : (
-              <>
-                <strong>This is the working document.</strong>
-                <span>
-                  Preview and print as often as needed. Recording an issuance
-                  saves a dated snapshot and locks that formal version.
-                </span>
-              </>
-            )}
-            {issuanceEdit ? (
-              <label className="issuance-title-field">
-                <span>Issuance title (optional)</span>
-                <input
-                  value={getIssuanceTitle(
-                    issuance.history.find(
-                      (record) => record.id === issuanceEdit.record.id,
-                    ) ?? issuanceEdit.record,
-                  )}
-                  onChange={(event) =>
-                    handleSetIssuanceTitle(
-                      issuanceEdit.record.id,
-                      event.target.value,
-                    )
-                  }
-                  placeholder="Leave blank for no title"
-                />
-              </label>
-            ) : !snapshotView && !issuance.locked ? (
-              <label className="issuance-title-field">
-                <span>Issuance title (optional)</span>
-                <input
-                  value={draftIssuanceTitle}
-                  onChange={(event) =>
-                    dispatch({
-                      type: "setIssuance",
-                      issuance: { draftTitle: event.target.value },
-                    })
-                  }
-                  placeholder="Leave blank for no title"
-                />
-              </label>
-            ) : null}
-          </div>
-          <div className="issuance-actions">
-            {issuanceEdit ? (
-              <>
-                <button
-                  className="btn btn-secondary"
-                  onClick={handleCancelIssuedVersionEdit}
-                  type="button"
-                >
-                  Cancel
-                </button>
-                <button
-                  className="btn btn-print"
-                  onClick={handleSaveIssuedVersion}
-                  type="button"
-                >
-                  Save issued version
-                </button>
-              </>
-            ) : snapshotView ? (
-              <>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => setFixDecisionOpen((open) => !open)}
-                  type="button"
-                  aria-expanded={fixDecisionOpen}
-                >
-                  Fix issued version
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  onClick={handleReturnFromSnapshot}
-                  type="button"
-                >
-                  Back to current document
-                </button>
-              </>
-            ) : issuance.locked && latestIssue ? (
-              <>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => setFixDecisionOpen((open) => !open)}
-                  type="button"
-                  aria-expanded={fixDecisionOpen}
-                >
-                  Fix issued version
-                </button>
-                <button
-                  className="btn btn-print"
-                  onClick={handleStartNextIssue}
-                  type="button"
-                >
-                  Start next issue
-                </button>
-              </>
-            ) : (
-              <button
-                className="btn btn-print"
-                onClick={handleIssueAndPrint}
-                type="button"
-              >
-                Record as issued
-              </button>
-            )}
-          </div>
-        </div>
-
-        {fixDecisionOpen && selectedIssuedVersion && !issuanceEdit && (
-          <div
-            className="issuance-fix-decision"
-            role="group"
-            aria-label="Fix issued version"
-          >
-            <div className="issuance-fix-copy">
-              <strong>
-                How do you want to update{" "}
-                {getIssuanceTitle(selectedIssuedVersion) || "this issued version"}?
-              </strong>
-              <span>
-                Edit the selected snapshot directly, or preserve it and create
-                a correction from that version.
-              </span>
-            </div>
-            <div className="issuance-fix-actions">
-              <button
-                className="btn btn-secondary"
-                onClick={handleEditIssuedVersion}
-                type="button"
-              >
-                Edit this issued version
-              </button>
-              <button
-                className="btn btn-print"
-                onClick={handleCreateCorrectionFromSelected}
-                type="button"
-              >
-                Create correction from this version
-              </button>
-            </div>
-          </div>
-        )}
-
-        {issuance.history.length > 0 && (
-          <details className="issuance-history-disclosure">
-            <summary>
-              <span>Manage issued versions</span>
-              <span>{issuance.history.length}</span>
-            </summary>
-            <div className="issuance-history" aria-label="Issued snapshots">
-              {[...issuance.history].reverse().map((record) => {
-              const superseded = issuance.history.some(
-                (entry) => entry.supersedesId === record.id,
-              );
-              const isCurrent =
-                issuance.locked && latestIssue?.id === record.id;
-
-              return (
-                <div className="issuance-row" key={record.id}>
-                  <div className="issuance-row-title">
-                    <input
-                      className="issuance-row-title-input"
-                      value={getIssuanceTitle(record)}
-                      onChange={(event) =>
-                        handleSetIssuanceTitle(record.id, event.target.value)
-                      }
-                      placeholder="Optional issuance title"
-                      aria-label={`Issuance title for ${getIssuedDateLabel(record.issuedAt)}`}
-                      disabled={Boolean(snapshotView || issuanceEdit)}
-                    />
-                    <span>
-                      {isCurrent
-                        ? "Current locked issue"
-                        : superseded
-                          ? "Superseded by later issuance"
-                          : "Saved snapshot"}
-                    </span>
-                  </div>
-                  <div className="issuance-row-meta">
-                    <span>{getIssuedDateLabel(record.issuedAt)}</span>
-                    <span>
-                      {record.itemCount ?? 0} items · {record.photoCount ?? 0}{" "}
-                      photos
-                    </span>
-                  </div>
-                  <button
-                    className="issuance-reprint-btn"
-                    onClick={() =>
-                      handleOpenHistoricalIssue(record, { print: true })
-                    }
-                    type="button"
-                    disabled={Boolean(issuanceEdit)}
-                  >
-                    Reprint
-                  </button>
-                </div>
-              );
-              })}
-            </div>
-          </details>
-        )}
-      </section>
     </div>
   );
 }

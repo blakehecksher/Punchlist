@@ -51,12 +51,6 @@ export default function ProjectSidebar({
   onLoadFromFile,
   onClear,
   clearConfirm,
-  readOnly = false,
-  issuedSnapshots = [],
-  activeSnapshotId = null,
-  onOpenSnapshot,
-  onReturnToWorking,
-  snapshotNavigationDisabled = false,
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [documentSort, setDocumentSort] = useState("date");
@@ -152,13 +146,9 @@ export default function ProjectSidebar({
                 <button
                   className="sidebar-item-btn"
                   onClick={() => {
-                    if (isActive && activeSnapshotId) {
-                      onReturnToWorking?.();
-                    } else if (!isActive) {
-                      onOpen(proj.id);
-                    }
+                    if (!isActive) onOpen(proj.id);
                   }}
-                  disabled={isActive && !activeSnapshotId}
+                  disabled={isActive}
                   type="button"
                 >
                   <span className="sidebar-item-name">{projectName}</span>
@@ -185,37 +175,6 @@ export default function ProjectSidebar({
                 </button>
                 </div>
 
-                {isActive && issuedSnapshots.length > 0 && (
-                  <div className="sidebar-snapshots" aria-label="Issued versions">
-                    <div className="sidebar-snapshots-heading">Issued versions</div>
-                    {issuedSnapshots.map((record, index) => {
-                      const isSelected = record.id === activeSnapshotId;
-                      const isLatest = index === issuedSnapshots.length - 1;
-                      return (
-                        <button
-                          className={`sidebar-snapshot${isSelected ? " sidebar-snapshot--active" : ""}`}
-                          key={record.id}
-                          onClick={() => onOpenSnapshot?.(record)}
-                          type="button"
-                          disabled={snapshotNavigationDisabled}
-                          aria-current={isSelected ? "page" : undefined}
-                        >
-                          <span className="sidebar-snapshot-line">
-                            <span className="sidebar-snapshot-name">
-                              {record.displayTitle || "Untitled issuance"}
-                            </span>
-                            {isLatest && (
-                              <span className="sidebar-snapshot-badge">Latest</span>
-                            )}
-                          </span>
-                          <span className="sidebar-snapshot-meta">
-                            Issued {record.displayDate || "Date unavailable"}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             );
           })}
@@ -229,7 +188,6 @@ export default function ProjectSidebar({
                 <input
                   type="checkbox"
                   checked={layout.showSummary}
-                  disabled={readOnly}
                   onChange={(event) =>
                     onLayoutChange({ showSummary: event.target.checked })
                   }
@@ -240,23 +198,11 @@ export default function ProjectSidebar({
                 <input
                   type="checkbox"
                   checked={layout.showCount}
-                  disabled={readOnly}
                   onChange={(event) =>
                     onLayoutChange({ showCount: event.target.checked })
                   }
                 />
                 <span>Show item count</span>
-              </label>
-              <label className="sidebar-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={layout.showIssuances}
-                  disabled={readOnly}
-                  onChange={(event) =>
-                    onLayoutChange({ showIssuances: event.target.checked })
-                  }
-                />
-                <span>Show issuances</span>
               </label>
             </div>
           </details>
@@ -267,7 +213,6 @@ export default function ProjectSidebar({
               <button
                 className="sidebar-action-btn"
                 onClick={onSortRooms}
-                disabled={readOnly}
                 type="button"
               >
                 <span className="sidebar-action-icon" aria-hidden="true">
@@ -312,7 +257,6 @@ export default function ProjectSidebar({
               <button
                 className={`sidebar-action-btn sidebar-action-btn--danger${clearConfirm ? " sidebar-action-btn--confirm" : ""}`}
                 onClick={onClear}
-                disabled={readOnly}
                 type="button"
               >
                 <span className="sidebar-action-icon sidebar-action-icon--reset" aria-hidden="true">

@@ -6,14 +6,9 @@
  * via OneDrive or any file-sharing method.
  */
 
-import {
-  idbGetAllPhotos,
-  idbGetAllIssueSnapshots,
-  idbSetIssueSnapshot,
-  idbSetPhoto,
-} from "./idb.js";
+import { idbGetAllPhotos, idbSetPhoto } from "./idb.js";
 
-const FILE_VERSION = 2;
+const FILE_VERSION = 3;
 
 /**
  * Gather project data + all photos into a single JSON object
@@ -21,14 +16,12 @@ const FILE_VERSION = 2;
  */
 export async function saveProjectToFile(projectId, data) {
   const photos = await idbGetAllPhotos(projectId);
-  const issueSnapshots = await idbGetAllIssueSnapshots(projectId);
 
   const payload = {
     _punchlistFile: true,
     _version: FILE_VERSION,
     data,
     photos,
-    issueSnapshots,
   };
 
   const json = JSON.stringify(payload);
@@ -47,7 +40,7 @@ export async function saveProjectToFile(projectId, data) {
 }
 
 /**
- * Read a .json file and return project data, photos, and issued snapshots.
+ * Read a .json file and return project data and photos.
  * Throws if the file is not a valid punchlist export.
  */
 export async function loadProjectFromFile(file) {
@@ -66,7 +59,6 @@ export async function loadProjectFromFile(file) {
   return {
     data: payload.data,
     photos: payload.photos || {},
-    issueSnapshots: payload.issueSnapshots || {},
   };
 }
 
@@ -77,12 +69,5 @@ export async function restorePhotosToIdb(projectId, photos) {
   const entries = Object.entries(photos);
   for (const [itemId, value] of entries) {
     await idbSetPhoto(projectId, itemId, value);
-  }
-}
-
-export async function restoreIssueSnapshotsToIdb(projectId, snapshots) {
-  const entries = Object.entries(snapshots);
-  for (const [issueId, value] of entries) {
-    await idbSetIssueSnapshot(projectId, issueId, value);
   }
 }

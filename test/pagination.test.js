@@ -93,3 +93,24 @@ test("uses the documented first-page thresholds", () => {
     0,
   );
 });
+
+test("places the End of Punch List field in the next available document row", () => {
+  const pagesWithSpace = paginateDetail(
+    makeData({ itemCount: 2 }),
+    { density: "2x2" },
+    { includeSiteConditions: false, includeDocumentEnd: true },
+  );
+  assert.equal(pagesWithSpace.length, 1);
+  assert.equal(pagesWithSpace[0].at(-1).type, "documentEnd");
+
+  const fullPages = paginateDetail(
+    makeData({ itemCount: 4 }),
+    { density: "2x2" },
+    { includeSiteConditions: false, includeDocumentEnd: true },
+  );
+  assert.equal(fullPages.length, 2);
+  assert.deepEqual(fullPages[1].map((segment) => segment.type), [
+    "header",
+    "documentEnd",
+  ]);
+});
