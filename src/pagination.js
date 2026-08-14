@@ -113,7 +113,7 @@ export function getFirstPageItemRows(siteConditions, defaultRows) {
 export function paginateDetail(data, layout, options = {}) {
   const { columns, firstPageRows: defaultFirstPageRows, otherPageRows } =
     getLayoutMetrics(layout);
-  const { includeSiteConditions = true, includeIssuanceEnd = false } = options;
+  const { includeSiteConditions = true, includeDocumentEnd = false } = options;
   const pages = [];
   const sections = buildSections(data);
   const firstPageRows = includeSiteConditions
@@ -202,9 +202,9 @@ export function paginateDetail(data, layout, options = {}) {
   });
 
   flushRowGroup();
-  if (includeIssuanceEnd) {
+  if (includeDocumentEnd) {
     if (rowsUsed >= rowsForPage()) flushPage();
-    currentPage.push({ type: "issuanceEnd" });
+    currentPage.push({ type: "documentEnd" });
     rowsUsed += 1;
   }
   if (currentPage.length > 1) pages.push(currentPage);
