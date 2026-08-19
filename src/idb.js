@@ -149,6 +149,41 @@ export async function idbCopyProjectPhotos(fromProjectId, toProjectId) {
   });
 }
 
+/** Bare item IDs that currently have a photo stored for this project. */
+export async function idbListPhotoIds(projectId) {
+  if (!projectId) return [];
+  const db = await openPhotoDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const prefix = `${projectId}:`;
+    const ids = [];
+    tx.objectStore(IDB_STORE).openKeyCursor().onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (!cursor) {
+        resolve(ids);
+        return;
+      }
+      const key = String(cursor.key);
+      if (key.startsWith(prefix)) ids.push(key.slice(prefix.length));
+      cursor.continue();
+    };
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
+/** Delete an explicit list of this project's photos in one transaction. */
+export async function idbDeletePhotos(projectId, itemIds = []) {
+  if (!projectId || itemIds.length === 0) return;
+  const db = await openPhotoDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    const store = tx.objectStore(IDB_STORE);
+    itemIds.forEach((itemId) => store.delete(makeKey(projectId, itemId)));
+    tx.oncomplete = resolve;
+    tx.onerror = (e) => reject(e.target.error);
+  });
+}
+
 export async function idbDeletePhoto(projectId, itemId) {
   const db = await openPhotoDB();
   return new Promise((resolve, reject) => {
