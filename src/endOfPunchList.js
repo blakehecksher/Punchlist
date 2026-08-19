@@ -17,17 +17,21 @@ export function getLegacyEndDates(issuance) {
   ].join(", ");
 }
 
-export function normalizeDocumentEndEntries(stored = {}) {
-  if (Array.isArray(stored.endOfPunchListEntries)) {
-    return stored.endOfPunchListEntries.map((entry) => String(entry ?? ""));
+export function normalizeDocumentEndEntries(stored) {
+  // A default parameter only covers undefined. A missing or corrupt project
+  // record reads back as null, which has to land on the same empty result.
+  const record = stored ?? {};
+
+  if (Array.isArray(record.endOfPunchListEntries)) {
+    return record.endOfPunchListEntries.map((entry) => String(entry ?? ""));
   }
 
-  if (typeof stored.endOfPunchListDates === "string") {
-    const previousText = stored.endOfPunchListDates.trim();
+  if (typeof record.endOfPunchListDates === "string") {
+    const previousText = record.endOfPunchListDates.trim();
     if (previousText) return [previousText];
   }
 
-  const legacyDates = getLegacyEndDates(stored.issuance);
+  const legacyDates = getLegacyEndDates(record.issuance);
   return legacyDates ? [legacyDates] : [];
 }
 

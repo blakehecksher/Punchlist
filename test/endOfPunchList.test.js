@@ -45,3 +45,11 @@ test("preserves current entries and converts the previous single text field", ()
     ["August 1, 2026"],
   );
 });
+
+test("treats a missing record like an empty one", () => {
+  // A corrupt or absent project reads back as null, not undefined, so the
+  // default parameter did not cover it and this threw.
+  assert.deepEqual(normalizeDocumentEndEntries(null), []);
+  assert.deepEqual(normalizeDocumentEndEntries(undefined), []);
+  assert.deepEqual(normalizeDocumentEndEntries({}), []);
+});

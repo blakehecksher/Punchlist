@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { describeBackupAge } from "./projectStore.js";
 
 function TrashIcon() {
   return (
@@ -21,6 +22,14 @@ function ResetIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M4 7v5h5M4.5 12a7.5 7.5 0 1 0 2-5.1" />
+    </svg>
+  );
+}
+
+function FolderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 17.5z" />
     </svg>
   );
 }
@@ -51,6 +60,10 @@ export default function ProjectSidebar({
   onLoadFromFile,
   onClear,
   clearConfirm,
+  backupFolderName,
+  backupFolderSupported,
+  onChooseBackupFolder,
+  onUseDownloadFolder,
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [documentSort, setDocumentSort] = useState("date");
@@ -152,10 +165,18 @@ export default function ProjectSidebar({
                   type="button"
                 >
                   <span className="sidebar-item-name">{projectName}</span>
-                  <span className="sidebar-item-meta">
-                    {proj.isExample
-                      ? `Practice project · ${proj.lastSaved || "No date"}`
-                      : proj.lastSaved || "No date"}
+                  <span
+                    className={`sidebar-item-meta${
+                      isConfirming && !proj.isExample
+                        ? " sidebar-item-meta--confirm"
+                        : ""
+                    }`}
+                  >
+                    {isConfirming && !proj.isExample
+                      ? `${describeBackupAge(proj.lastBackupAt)} · click again to delete`
+                      : proj.isExample
+                        ? `Practice project · ${proj.lastSaved || "No date"}`
+                        : proj.lastSaved || "No date"}
                   </span>
                 </button>
                 <button
@@ -232,6 +253,44 @@ export default function ProjectSidebar({
                 </span>
                 {copyStatus || "Copy punch list text"}
               </button>
+              {backupFolderSupported && (
+                <div className="sidebar-backup-folder">
+                  <div className="sidebar-backup-folder-label">
+                    <span
+                      className="sidebar-action-icon"
+                      aria-hidden="true"
+                    >
+                      <FolderIcon />
+                    </span>
+                    <span className="sidebar-backup-folder-text">
+                      <span className="sidebar-backup-folder-title">
+                        Backup folder
+                      </span>
+                      <span className="sidebar-backup-folder-value">
+                        {backupFolderName || "Downloads (default)"}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="sidebar-backup-folder-actions">
+                    <button
+                      className="sidebar-backup-folder-btn"
+                      onClick={onChooseBackupFolder}
+                      type="button"
+                    >
+                      {backupFolderName ? "Change" : "Choose"}
+                    </button>
+                    {backupFolderName && (
+                      <button
+                        className="sidebar-backup-folder-btn"
+                        onClick={onUseDownloadFolder}
+                        type="button"
+                      >
+                        Use Downloads
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
               <button className="sidebar-action-btn" onClick={onSaveToFile} type="button">
                 <span className="sidebar-action-icon sidebar-action-icon--download" aria-hidden="true">
                   <svg viewBox="0 0 24 24" fill="none">

@@ -94,6 +94,47 @@ export function saveProjectData(id, data) {
   }
 }
 
+/**
+ * Note that a project was just backed up to a file.
+ *
+ * Deleting a project is instant and total, so the delete confirmation shows
+ * this: whether a recoverable copy exists is the one fact worth having at
+ * that moment. Stored on the index rather than in the document so it survives
+ * a document reset and never rides along into a backup file.
+ */
+export function recordBackup(id, when = new Date()) {
+  const index = loadIndex();
+  const entry = index.find((e) => e.id === id);
+  if (!entry) return;
+  entry.lastBackupAt = when.toISOString();
+  saveIndex(index);
+}
+
+/**
+ * How long ago a project was last written to a backup file.
+ *
+ * Deleting a project is instant and unrecoverable, so the confirm step says
+ * whether a file exists to load back. Two clicks is enough friction; what was
+ * missing is knowing the answer to "can I get this back?".
+ */
+export function describeBackupAge(lastBackupAt, now = new Date()) {
+  if (!lastBackupAt) return "Never backed up";
+
+  const then = new Date(lastBackupAt);
+  if (Number.isNaN(then.getTime())) return "Never backed up";
+
+  const minutes = Math.floor((now - then) / 60000);
+  if (minutes < 1) return "Backed up just now";
+  if (minutes < 60) return `Backed up ${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Backed up ${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Backed up yesterday";
+  return `Backed up ${days} days ago`;
+}
+
 export function deleteProject(id) {
   localStorage.removeItem(PROJ_KEY(id));
   const index = loadIndex().filter((e) => e.id !== id);
