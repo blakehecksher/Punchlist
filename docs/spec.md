@@ -10,10 +10,11 @@ The original version was built as a Claude artifact (iframe). That context block
 - **Print/PDF**: Each page is exactly 11in × 8.5in landscape. What you see on screen = what prints. No items cut across pages.
 - **Pagination**: Detail pages use one fixed 2 x 2 layout: four photo cards in two item rows. Multiple small rooms can pack onto one page. Room headers repeat with "(cont'd)" when a room spans pages.
 - **Row height**: The two item rows divide the available page content height evenly.
-- **Persistence**: Text/structure → localStorage. Photos (base64) → IndexedDB keyed by item ID.
+- **Persistence**: Text/structure → localStorage. Photos (base64) → IndexedDB keyed by item ID. Persistent storage is requested so the origin is not evicted silently, a failed save raises a visible banner, and Print writes a `Project_punchlist YYMMDD.json` backup to the download folder.
+- **Recoverability**: Removing an item or room, clearing the list, and merging an import are all undoable for 15 seconds, photos included. Photos are never deleted on removal; orphans are collected only after a backup file containing them has been written.
 - **Editing**: All text editable inline. Site conditions, items, and rooms can be added/removed.
 - **Issue codes**: General uses `GEN-NN`; Exterior without a room number uses `EXT-NN`; other missing room numbers remain `000-NN`. Re-import accepts legacy `GN`, `000`, and `RM` aliases.
-- **First-issuance baseline**: Items imported before the first issuance are not automatically underlined. New markers represent items added after an issued baseline.
+- **Item state from formatting**: Underline means new, bold means revised, strikethrough means complete. Any such formatting anywhere within an item flags the whole item. State is read from the description's markup and never stored separately, so the printed document and the copied outline cannot disagree.
 - **Outline formatting**: Bold, underline, and strikethrough can span one or several item lines. Formatting on room/section headings must not change their structural classification.
 
 ## Issuance, revision, and product scope
@@ -35,10 +36,32 @@ The app keeps one living working project and makes every send an immutable issue
 ### Remaining lifecycle work
 
 - **Simple state**: Explicit Open and Closed state is enough for the document product; optional closeout reasons can include Completed, Accepted as-is, Duplicate, or Not applicable.
-- **Formatting**: Bold, underline, and strikethrough can remain useful visual conventions, but they should not be the source of truth for item state once explicit state exists.
-- **Safe re-import**: Missing items should enter a review step instead of being silently removed from the working record.
+- **Formatting is the source of truth**: this supersedes the earlier intent to replace formatting with explicit stored state. Bold, underline, and strikethrough are the convention the printed legend already promises, and keeping state in the markup means there is nothing to fall out of sync.
+- **Safe re-import**: Missing items should enter a review step instead of being silently removed from the working record. Undo now covers the merge, and the planned outline pane removes the whole-document diff in favour of inserting pasted lines, which retires most of this risk.
 
 The issue model should preserve the narrow printable-document experience. It must not require contractor login, assignment, response, or notification workflows.
 
 ## Current layout constraint
 JavaScript pagination flattens cards into two full-width document rows so cards remain the same height even when a row crosses room boundaries. The End of Punch List record consumes one complete row and moves to a new page when no complete row remains. Empty sections do not yet consume row budget and remain a known edge case.
+
+
+## Planned editing model
+
+The next editing surface is a persistent outline pane on the right, with the
+paginated document staying on the left so the app keeps its current shape.
+
+The outline is a **view of the document model, not a serialization of it**.
+Each line binds to a real item ID and edits `description` directly: Enter mints
+a new item, Backspace on an empty line removes one, Tab and Shift+Tab move
+between room and item level, and inline formatting works as it does on the
+cards. There is no parse step during normal editing, so item identity — and
+therefore every attached photo — is never reconstructed and never at risk.
+
+Parsing remains for external paste and file import only, scoped to the pasted
+fragment rather than diffed against the whole document.
+
+Two consequences to accept deliberately: an item inserted mid-room takes the
+next unused sequence rather than renumbering its neighbours, so codes read out
+of order on the page (display order is outline order; the code is identity);
+and per-line editors make a formatting selection spanning several items harder
+than the current single editable region does.

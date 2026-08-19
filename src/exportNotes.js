@@ -83,6 +83,7 @@ function hasInlineTag(html, format) {
       /<(?:s|del|strike|x)(?:\s|>)/i,
       /text-decoration[^>"]*line-through/i,
     ],
+    underline: [/<u(?:\s|>)/i, /text-decoration[^>"]*underline/i],
   };
 
   return (patterns[format] || []).some((pattern) => pattern.test(html ?? ""));
@@ -156,7 +157,7 @@ export function buildExportMarkdown(data) {
         formatItemLine(
           formatIssueCode("generalNotes", data.generalNotesTitle, item.issueSeq),
           item.description,
-          Boolean(item.isNew),
+          hasInlineTag(item.description, "underline"),
           hasInlineTag(item.description, "strike"),
         ),
       );
@@ -172,7 +173,7 @@ export function buildExportMarkdown(data) {
         formatItemLine(
           formatIssueCode("room", room.name, item.issueSeq),
           item.description,
-          Boolean(item.isNew),
+          hasInlineTag(item.description, "underline"),
           hasInlineTag(item.description, "strike"),
         ),
       );
@@ -210,7 +211,7 @@ export function buildExportHtml(data) {
             formatItemHtml(
               formatIssueCode("generalNotes", data.generalNotesTitle, item.issueSeq),
               item.description,
-              Boolean(item.isNew),
+              hasInlineTag(item.description, "underline"),
               hasInlineTag(item.description, "strike"),
             ),
           )
@@ -229,7 +230,7 @@ export function buildExportHtml(data) {
             formatItemHtml(
               formatIssueCode("room", room.name, item.issueSeq),
               item.description,
-              Boolean(item.isNew),
+              hasInlineTag(item.description, "underline"),
               hasInlineTag(item.description, "strike"),
             ),
           )

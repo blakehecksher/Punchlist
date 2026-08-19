@@ -7,28 +7,60 @@
  */
 
 import { idbGetAllPhotos, idbSetPhoto } from "./idb.js";
+import { SCHEMA_VERSION } from "./projectStore.js";
 
 const FILE_VERSION = 3;
+
+const pad2 = (value) => String(value).padStart(2, "0");
+
+/**
+ * Backup file name: "Project_punchlist YYMMDD.json".
+ *
+ * The date is when the backup was taken, not the document date, so files sort
+ * chronologically in the download folder. Saving twice in one day does not
+ * need rotation logic here — the browser appends "(1)", "(2)" itself rather
+ * than overwriting, which is the safe behaviour.
+ */
+export function makeBackupFilename(data, when = new Date()) {
+  const name =
+    (data?.project || "").replace(/[^a-zA-Z0-9 _-]/g, "").trim() || "Punchlist";
+  const stamp = `${pad2(when.getFullYear() % 100)}${pad2(when.getMonth() + 1)}${pad2(when.getDate())}`;
+  return `${name}_punchlist ${stamp}.json`;
+}
+
+/**
+ * Assemble the backup payload.
+ *
+ * A backup file outlives the release that wrote it by far longer than a
+ * localStorage record does, so it records the document's shape version too:
+ * `_version` describes the file envelope, `schemaVersion` the document inside.
+ */
+export function buildBackupPayload(data, photos) {
+  return {
+    _punchlistFile: true,
+    _version: FILE_VERSION,
+    data: { ...data, schemaVersion: SCHEMA_VERSION },
+    photos,
+  };
+}
 
 /**
  * Gather project data + all photos into a single JSON object
  * and trigger a browser file download.
+ *
+ * Resolves with the photo map that was serialized into the file. Callers use
+ * that to prove a given photo's bytes are in the saved file before deleting
+ * it from IndexedDB.
  */
-export async function saveProjectToFile(projectId, data) {
+export async function saveProjectToFile(projectId, data, when = new Date()) {
   const photos = await idbGetAllPhotos(projectId);
 
-  const payload = {
-    _punchlistFile: true,
-    _version: FILE_VERSION,
-    data,
-    photos,
-  };
+  const payload = buildBackupPayload(data, photos);
 
   const json = JSON.stringify(payload);
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-
-  const filename = `${(data.project || "Punchlist").replace(/[^a-zA-Z0-9 _-]/g, "")} - ${(data.date || "export").replace(/[^a-zA-Z0-9 _,-]/g, "")}.json`;
+  const filename = makeBackupFilename(data, when);
 
   const link = document.createElement("a");
   link.href = url;
@@ -37,6 +69,8 @@ export async function saveProjectToFile(projectId, data) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+
+  return { filename, photos };
 }
 
 /**

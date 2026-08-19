@@ -3,10 +3,12 @@ import {
   idbGetAllPhotos,
   idbSetPhoto,
   idbClearAll,
-  idbClearProjectPhotos,
-  idbDeletePhoto,
+  idbListPhotoIds,
+  idbDeletePhotos,
   idbCopyProjectPhotos,
 } from "./idb.js";
+import { requestPersistentStorage } from "./storage.js";
+import { findOrphanPhotoIds, selectRecoverableOrphans } from "./photoGc.js";
 import {
   convertHtmlToImportText,
   hasStructuredImportHtml,
@@ -21,7 +23,6 @@ import {
 } from "./projectFile.js";
 import {
   formatIssueCode,
-  formatLegacyIssueCodes,
   getNextIssueSeq,
   getRoomIssuePrefix,
   isUnnumberedRoom,
@@ -51,11 +52,10 @@ import {
   setActiveId,
   migrateLegacy,
 } from "./projectStore.js";
+import { makeItem, uid } from "./items.js";
+import { mergeImportedNotes, summarizeMerge } from "./mergeNotes.js";
 import "./styles.css";
 
-const uid = () => Math.random().toString(36).slice(2, 9);
-const normalizeRoomKey = (name) =>
-  name.trim().replace(/\s+/g, " ").toLowerCase();
 // Named prefixes such as EXT and the 000 missing-number fallback sort before
 // numbered rooms. Keep the fallback finite so the name tiebreak remains valid.
 const getRoomSortNumber = (roomName) => {
@@ -71,14 +71,6 @@ const compareRoomNames = (left, right) => {
     sensitivity: "base",
   });
 };
-const makeItem = (description = "", issueSeq = 1, isNew = false) => ({
-  id: uid(),
-  description,
-  issueSeq,
-  isNew,
-  photo: null,
-  photoPosition: null,
-});
 const getCurrentDateLabel = (date = new Date()) =>
   new Intl.DateTimeFormat("en-US", {
     month: "long",
@@ -94,7 +86,7 @@ const PUNCH_LIST_TEMPLATE = `- Site Conditions
 - Room Name 101
     - Item 1
     - Item 2`;
-const EXAMPLE_VERSION = 2;
+const EXAMPLE_VERSION = 3;
 const STARTER_OUTLINE = `- Site Conditions
     - Protect finished flooring through the final walkthrough
     - Maintain dust protection at occupied areas
@@ -171,206 +163,6 @@ function summarizeEntries(entries) {
   );
 }
 
-function buildIssueCodeIndex(items, kind, title) {
-  const index = new Map();
-
-  items.forEach((item, position) => {
-    index.set(formatIssueCode(kind, title, item.issueSeq).toUpperCase(), position);
-
-    formatLegacyIssueCodes(kind, title, item.issueSeq).forEach((legacyCode) => {
-      if (!index.has(legacyCode)) index.set(legacyCode, position);
-    });
-  });
-
-  return index;
-}
-
-function mergeImportedNotes(state, payload) {
-  const importedIsNew = () => false;
-  const rooms = state.rooms.map((room) => ({
-    ...room,
-    items: [...room.items],
-  }));
-  const roomIndexByKey = new Map(
-    rooms.map((room, index) => [normalizeRoomKey(room.name), index]),
-  );
-  const nextGeneralNotes = [...state.generalNotes];
-  const generalNoteIndexByCode = buildIssueCodeIndex(
-    nextGeneralNotes,
-    "generalNotes",
-    state.generalNotesTitle,
-  );
-  let nextGeneralIssueSeq = getNextIssueSeq(
-    nextGeneralNotes,
-    state.nextGeneralIssueSeq,
-  );
-  let updatedCount = 0;
-  let newCount = 0;
-  let removedCount = 0;
-  const touchedGeneralIndices = new Set();
-
-  payload.generalNotes.forEach((imported) => {
-    const existingIndex =
-      imported.issueCode && generalNoteIndexByCode.has(imported.issueCode)
-        ? generalNoteIndexByCode.get(imported.issueCode)
-        : undefined;
-
-    if (existingIndex !== undefined) {
-      touchedGeneralIndices.add(existingIndex);
-      nextGeneralNotes[existingIndex] = {
-        ...nextGeneralNotes[existingIndex],
-        description: imported.description,
-        isNew: importedIsNew(imported),
-      };
-      updatedCount += 1;
-      return;
-    }
-
-    touchedGeneralIndices.add(nextGeneralNotes.length);
-    nextGeneralNotes.push(
-      makeItem(imported.description, nextGeneralIssueSeq, importedIsNew(imported)),
-    );
-    nextGeneralIssueSeq += 1;
-    newCount += 1;
-  });
-
-  // Remove general notes absent from the import
-  let finalGeneralNotes = nextGeneralNotes;
-  if (payload.generalNotes.length > 0) {
-    finalGeneralNotes = nextGeneralNotes.filter((_, i) =>
-      touchedGeneralIndices.has(i),
-    );
-    removedCount += nextGeneralNotes.length - finalGeneralNotes.length;
-  }
-
-  payload.rooms.forEach((room) => {
-    const key = normalizeRoomKey(room.name);
-    const existingIndex = roomIndexByKey.get(key);
-
-    if (existingIndex !== undefined) {
-      const existingRoom = rooms[existingIndex];
-      const nextItems = [...existingRoom.items];
-      const roomItemIndexByCode = buildIssueCodeIndex(
-        nextItems,
-        "room",
-        existingRoom.name,
-      );
-      let nextRoomIssueSeq = getNextIssueSeq(
-        nextItems,
-        existingRoom.nextItemIssueSeq,
-      );
-
-      const touchedRoomIndices = new Set();
-
-      room.items.forEach((imported) => {
-        const matchedIndex =
-          imported.issueCode && roomItemIndexByCode.has(imported.issueCode)
-            ? roomItemIndexByCode.get(imported.issueCode)
-            : undefined;
-
-        if (matchedIndex !== undefined) {
-          touchedRoomIndices.add(matchedIndex);
-          nextItems[matchedIndex] = {
-            ...nextItems[matchedIndex],
-            description: imported.description,
-            isNew: importedIsNew(imported),
-          };
-          updatedCount += 1;
-          return;
-        }
-
-        touchedRoomIndices.add(nextItems.length);
-        nextItems.push(
-          makeItem(imported.description, nextRoomIssueSeq, importedIsNew(imported)),
-        );
-        nextRoomIssueSeq += 1;
-        newCount += 1;
-      });
-
-      // Remove room items absent from the import
-      const filteredItems = nextItems.filter((_, i) =>
-        touchedRoomIndices.has(i),
-      );
-      removedCount += nextItems.length - filteredItems.length;
-
-      rooms[existingIndex] = {
-        ...existingRoom,
-        nextItemIssueSeq: nextRoomIssueSeq,
-        items: filteredItems,
-      };
-      return;
-    }
-
-    let nextRoomIssueSeq = 1;
-    const importedItems = room.items.map((imported) => {
-      const item = makeItem(
-        imported.description,
-        nextRoomIssueSeq,
-        importedIsNew(imported),
-      );
-      nextRoomIssueSeq += 1;
-      newCount += 1;
-      return item;
-    });
-    roomIndexByKey.set(key, rooms.length);
-    rooms.push({
-      id: uid(),
-      name: room.name,
-      nextItemIssueSeq: nextRoomIssueSeq,
-      items: importedItems,
-    });
-  });
-
-  // Only replace site conditions when the import actually carries some.
-  // Otherwise an import that simply omits the section wiped them out.
-  const replacedSiteConditions = payload.siteConditions.length > 0;
-
-  return {
-    data: {
-      ...state,
-      nextGeneralIssueSeq,
-      siteConditions: replacedSiteConditions
-        ? [...payload.siteConditions]
-        : state.siteConditions,
-      generalNotes: finalGeneralNotes,
-      rooms,
-    },
-    counts: {
-      updatedCount,
-      newCount,
-      removedCount,
-      affectedRoomCount: payload.rooms.length,
-      replacedSiteConditions,
-    },
-  };
-}
-
-function summarizeMerge(parsed, state) {
-  const { counts } = mergeImportedNotes(state, parsed);
-  const totalTouched =
-    counts.updatedCount + counts.newCount + counts.removedCount;
-
-  if (totalTouched === 0) {
-    return counts.replacedSiteConditions
-      ? "Merged: site conditions replaced."
-      : "Nothing merged.";
-  }
-
-  const roomPart =
-    counts.affectedRoomCount > 0
-      ? ` across ${counts.affectedRoomCount} room${counts.affectedRoomCount === 1 ? "" : "s"}`
-      : "";
-  const siteConditionsPart = counts.replacedSiteConditions
-    ? " Site conditions replaced."
-    : "";
-  const removedPart =
-    counts.removedCount > 0
-      ? `, ${counts.removedCount} removed`
-      : "";
-
-  return `Merged: ${counts.updatedCount} updated, ${counts.newCount} new item${counts.newCount === 1 ? "" : "s"}${removedPart}${roomPart}.${siteConditionsPart}`;
-}
-
 function makeBlankProjectData() {
   return {
     project: "",
@@ -390,27 +182,23 @@ function makeBlankProjectData() {
   };
 }
 
-function makeRoom(name = "Room Name", firstDescription = "", isNew = false) {
+function makeRoom(name = "Room Name", firstDescription = "") {
   return {
     id: uid(),
     name,
     nextItemIssueSeq: 2,
-    items: [makeItem(firstDescription, 1, isNew)],
+    items: [makeItem(firstDescription, 1)],
   };
 }
 
 function makeExampleEntries(prefix, entries) {
-  return entries.map((entry, index) => {
-    const details = typeof entry === "string" ? { description: entry } : entry;
-    return {
-      id: `${prefix}-${index + 1}`,
-      issueSeq: index + 1,
-      isNew: details.isNew ?? true,
-      description: details.description,
-      photo: null,
-      photoPosition: null,
-    };
-  });
+  return entries.map((description, index) => ({
+    id: `${prefix}-${index + 1}`,
+    issueSeq: index + 1,
+    description,
+    photo: null,
+    photoPosition: null,
+  }));
 }
 
 function makeExampleRoom(id, name, entries) {
@@ -613,11 +401,7 @@ const INITIAL_DATA = {
     nextGeneralIssueSeq: 4,
     generalNotes: makeExampleEntries("example-general", [
       "Clean work areas and remove construction debris before final review.",
-      {
-        isNew: false,
-        description:
-          "<b>Match adjacent paint sheen at all touch-up locations.</b>",
-      },
+      "<b>Match adjacent paint sheen at all touch-up locations.</b>",
       "Verify hardware operation after all adjustments are complete.",
     ]),
     rooms: [
@@ -627,14 +411,11 @@ const INITIAL_DATA = {
         "Seal the countertop-to-backsplash joint.",
       ]),
       makeExampleRoom("example-study", "Study 410", [
-        {
-          isNew: false,
-          description: "<s>Install door stop.</s>",
-        },
+        "<s>Install door stop.</s>",
         "Tighten hinge screws at the entry door.",
       ]),
       makeExampleRoom("example-living", "Living Room 201", [
-        "Caulk the baseboard joint at the east wall.",
+        "<u>Caulk the baseboard joint at the east wall.</u>",
         "Touch up paint at the built-in shelves.",
       ]),
       makeExampleRoom("example-bedroom", "Primary Bedroom 301", [
@@ -672,10 +453,9 @@ function normalizeStoredData(stored, photos = {}) {
   } = stored ?? {};
   const mergePhotos = (items = []) =>
     items.map((item) => {
-      const normalizedItem = {
-        ...item,
-        isNew: false,
-      };
+      // A stored new/revised/complete flag would be a second source of truth
+      // competing with the inline formatting. Drop any left by older releases.
+      const { isNew: _legacyIsNew, ...normalizedItem } = item;
       const entry = photos[item.id];
       if (!entry) return { ...normalizedItem, photo: null, photoPosition: null };
       if (typeof entry === "string")
@@ -1023,6 +803,15 @@ export default function PunchListApp() {
   const [clearConfirm, setClearConfirm] = useState(false);
   const clearTimer = useRef(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  // A failed save is the one status the user must not miss, so it sits in its
+  // own persistent banner instead of the status chip that clears after 1.5s.
+  const [saveError, setSaveError] = useState("");
+  // Kept apart from saveStatus so a routine "Saved" cannot overwrite the one
+  // message that tells the user where their backup file went.
+  const [backupNotice, setBackupNotice] = useState("");
+  const backupTimer = useRef(null);
+  const [undoState, setUndoState] = useState(null);
+  const undoTimer = useRef(null);
 
   const [activeId, setActiveIdState] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -1037,6 +826,12 @@ export default function PunchListApp() {
   const activeIdRef = useRef(null);
 
   const refreshIndex = () => setProjects(loadIndex());
+
+  // Best-effort storage is evictable: the browser may drop every project and
+  // photo without warning when the disk fills. Ask once per load to be exempt.
+  useEffect(() => {
+    requestPersistentStorage();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -1086,10 +881,18 @@ export default function PunchListApp() {
       try {
         saveProjectData(activeIdRef.current, stripPhotos(data));
         refreshIndex();
+        setSaveError("");
         setSaveStatus("Saved");
         setTimeout(() => setSaveStatus(""), 1500);
-      } catch {
-        // Quota exceeded.
+      } catch (error) {
+        // Usually the localStorage quota. Silently dropping this left the user
+        // typing into a document that had stopped being written to disk.
+        setSaveStatus("");
+        setSaveError(
+          error?.name === "QuotaExceededError"
+            ? "Out of browser storage — this punch list is no longer being saved. Save a backup file now, then delete a project you no longer need."
+            : "This punch list could not be saved to the browser. Save a backup file now.",
+        );
       }
     }, 800);
     return () => clearTimeout(saveTimer.current);
@@ -1112,15 +915,58 @@ export default function PunchListApp() {
   const persistActiveProject = useCallback((snapshot) => {
     clearTimeout(saveTimer.current);
     if (!activeIdRef.current) return;
-    saveProjectData(activeIdRef.current, stripPhotos(snapshot));
+    try {
+      saveProjectData(activeIdRef.current, stripPhotos(snapshot));
+      setSaveError("");
+    } catch {
+      setSaveError(
+        "The previous punch list could not be saved before switching. Reopen it and save a backup file.",
+      );
+    }
   }, []);
 
-  const discardPhotos = useCallback((items = []) => {
-    const projectId = activeIdRef.current;
-    if (!projectId) return;
-    items.forEach((item) => {
-      if (item?.id) idbDeletePhoto(projectId, item.id).catch(() => {});
+  /**
+   * Remember the document as it stands so the next change can be taken back.
+   *
+   * Photos are not deleted on removal any more, so restoring this snapshot
+   * restores the item's photo with it — in memory now and from IndexedDB
+   * after a reload, because the photo was never removed from either.
+   */
+  const captureUndo = useCallback((label, snapshot) => {
+    clearTimeout(undoTimer.current);
+    setUndoState({ label, data: snapshot });
+    undoTimer.current = setTimeout(() => setUndoState(null), 15000);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    clearTimeout(undoTimer.current);
+    setUndoState((previous) => {
+      if (previous) {
+        dispatch({ type: "load", data: previous.data });
+        setSaveStatus("Change undone");
+        setTimeout(() => setSaveStatus(""), 1500);
+      }
+      return null;
     });
+  }, []);
+
+  useEffect(() => () => clearTimeout(undoTimer.current), []);
+
+  // An undo holds a whole document. Applying one captured in another project
+  // would overwrite the project now open, so every switch drops it.
+  useEffect(() => {
+    clearTimeout(undoTimer.current);
+    setUndoState(null);
+  }, [activeId]);
+
+  useEffect(() => () => clearTimeout(backupTimer.current), []);
+
+  const announceBackup = useCallback((message, duration) => {
+    clearTimeout(backupTimer.current);
+    setBackupNotice(message);
+    if (duration) {
+      backupTimer.current = setTimeout(() => setBackupNotice(""), duration);
+    }
   }, []);
 
   const handlePositionChange = useCallback(
@@ -1321,6 +1167,7 @@ export default function PunchListApp() {
         return;
       }
 
+      captureUndo("Import merged", data);
       dispatch({ type: "mergeNotes", payload: parsed });
       setImportStatus(summarizeMerge(parsed, data));
       // The panel stays open: the status it just set is rendered inside it,
@@ -1331,7 +1178,7 @@ export default function PunchListApp() {
         error instanceof Error ? error.message : "Import failed.",
       );
     }
-  }, [data, importText, persistActiveProject]);
+  }, [captureUndo, data, importText, persistActiveProject]);
 
   const handleOpenImport = useCallback(() => {
     setImportOpen(true);
@@ -1398,19 +1245,60 @@ export default function PunchListApp() {
     }
   }, [data]);
 
+  /**
+   * Write a backup file, then collect photos whose items are gone.
+   *
+   * Deleting a photo from IndexedDB cannot be undone, so nothing is deleted
+   * until its bytes are provably inside the file that was just written: the
+   * backup carries every photo under the project's key prefix, orphans
+   * included, and loading that file restores them. Anything not in the
+   * payload is left alone.
+   *
+   * Resolves with the file name written.
+   */
+  const backupAndSweep = useCallback(async (snapshot, options = {}) => {
+    // The example is a practice project. An automatic download from it works
+    // against "explore freely"; an explicit Save to file still writes one.
+    if (options.skipExample && snapshot.isExample) return "";
+    const projectId = activeIdRef.current;
+    // Without an active project, idbGetAllPhotos would sweep up every
+    // project's photos into the export.
+    if (!projectId) throw new Error("No active project");
+
+    const { filename, photos } = await saveProjectToFile(
+      projectId,
+      stripPhotos(snapshot),
+    );
+
+    try {
+      const storedIds = await idbListPhotoIds(projectId);
+      const collectable = selectRecoverableOrphans(
+        findOrphanPhotoIds(snapshot, storedIds),
+        photos,
+      );
+      if (collectable.length > 0) {
+        await idbDeletePhotos(projectId, collectable);
+      }
+    } catch {
+      // Cleanup is housekeeping. The backup already succeeded, and leaving
+      // orphans in place costs space but never data.
+    }
+
+    return filename;
+  }, []);
+
   const handleSaveToFile = useCallback(async () => {
     try {
-      // Without an active project, idbGetAllPhotos would sweep up every
-      // project's photos into the export.
-      if (!activeIdRef.current) throw new Error("No active project");
-      await saveProjectToFile(activeIdRef.current, stripPhotos(data));
-      setSaveStatus("File saved");
-      setTimeout(() => setSaveStatus(""), 1500);
+      const filename = await backupAndSweep(data);
+      setSaveError("");
+      announceBackup(`Saved ${filename}`, 4000);
     } catch {
-      setSaveStatus("Save failed");
-      setTimeout(() => setSaveStatus(""), 1500);
+      announceBackup("");
+      setSaveError(
+        "The backup file could not be written. Check that downloads are allowed for this site, then try again.",
+      );
     }
-  }, [data]);
+  }, [announceBackup, backupAndSweep, data]);
 
   const handleLoadFromFile = useCallback(
     async (event) => {
@@ -1453,13 +1341,31 @@ export default function PunchListApp() {
     [data, persistActiveProject],
   );
 
-  const handlePreviewAndPrint = useCallback(() => {
+  /**
+   * Printing is the moment the document is worth keeping, so it is also the
+   * moment to write a backup. A failed backup is reported but never blocks
+   * the print itself.
+   */
+  const handlePreviewAndPrint = useCallback(async () => {
     setImportOpen(false);
     setHelpOpen(false);
+    announceBackup("Backing up…");
+
+    try {
+      const filename = await backupAndSweep(data, { skipExample: true });
+      setSaveError("");
+      announceBackup(filename ? `Backed up ${filename}` : "", 5000);
+    } catch {
+      announceBackup("");
+      setSaveError(
+        "Printed without writing a backup file. Check that downloads are allowed for this site, then use Save to file.",
+      );
+    }
+
     requestAnimationFrame(() => {
       requestAnimationFrame(() => window.print());
     });
-  }, []);
+  }, [announceBackup, backupAndSweep, data]);
 
   const handleClearAll = () => {
     if (!clearConfirm) {
@@ -1470,9 +1376,7 @@ export default function PunchListApp() {
 
     clearTimeout(clearTimer.current);
     setClearConfirm(false);
-    if (activeIdRef.current) {
-      idbClearProjectPhotos(activeIdRef.current).catch(() => {});
-    }
+    captureUndo("Punch list cleared", data);
     dispatch({ type: "clearAll" });
   };
 
@@ -1506,8 +1410,7 @@ export default function PunchListApp() {
         item.issueSeq,
       ),
       description: item.description,
-      isNew:
-        Boolean(item.isNew) || containsInlineTag(item.description, "u"),
+      isNew: containsInlineTag(item.description, "u"),
       isRevised: containsInlineTag(item.description, "b"),
       isCompleted: containsInlineTag(item.description, "s"),
     })),
@@ -1517,8 +1420,7 @@ export default function PunchListApp() {
         location: room.name,
         issueCode: formatIssueCode("room", room.name, item.issueSeq),
         description: item.description,
-        isNew:
-          Boolean(item.isNew) || containsInlineTag(item.description, "u"),
+        isNew: containsInlineTag(item.description, "u"),
         isRevised: containsInlineTag(item.description, "b"),
         isCompleted: containsInlineTag(item.description, "s"),
       })),
@@ -1636,7 +1538,11 @@ export default function PunchListApp() {
               const room = data.rooms.find(
                 (entry) => entry.id === section.sectionId,
               );
-              discardPhotos(room?.items);
+              const itemCount = room?.items?.length ?? 0;
+              captureUndo(
+                `${room?.name || "Room"} removed${itemCount ? ` (${itemCount} item${itemCount === 1 ? "" : "s"})` : ""}`,
+                data,
+              );
               dispatch({ type: "removeRoom", roomId: section.sectionId });
             }}
           >
@@ -1654,8 +1560,7 @@ export default function PunchListApp() {
       item={item}
       issueCode={getSectionIssueCode(section, item)}
       issueCodeStyle={getIssueCodeStyle({
-        isNew:
-          Boolean(item.isNew) || containsInlineTag(item.description, "u"),
+        isNew: containsInlineTag(item.description, "u"),
         isCompleted: containsInlineTag(item.description, "s"),
       })}
       density={layout.density}
@@ -1677,9 +1582,12 @@ export default function PunchListApp() {
         })
       }
       onRemove={() => {
-        // Photos live in IndexedDB keyed by item ID; dropping the item alone
-        // left the image orphaned there forever.
-        discardPhotos([item]);
+        // The item's photo stays in IndexedDB so undo can bring both back.
+        // It is collected later, once a backup file holds a copy of it.
+        captureUndo(
+          `${getSectionIssueCode(section, item)} removed`,
+          data,
+        );
         dispatch(
           section.sectionId === GENERAL_NOTES_SECTION_ID
             ? { type: "removeGeneralNote", id: item.id }
@@ -2172,6 +2080,7 @@ export default function PunchListApp() {
         sidebarOpen ? "app--sidebar-open" : "",
         importOpen ? "app--import-open" : "",
         data.isExample ? "app--example" : "",
+        saveError ? "app--alert" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -2225,10 +2134,10 @@ export default function PunchListApp() {
           </div>
         </div>
         <div className="toolbar-right">
-          {saveStatus && (
+          {(backupNotice || saveStatus) && (
             <span className="save-status">
               <span className="save-status-dot" aria-hidden="true" />
-              {saveStatus}
+              {backupNotice || saveStatus}
             </span>
           )}
           <button
@@ -2268,6 +2177,63 @@ export default function PunchListApp() {
           </button>
         </div>
       </div>
+
+      {saveError && (
+        <div className="save-error" role="alert">
+          <span className="save-error-icon" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
+              <path d="M12 9v4M12 17h.01" />
+              <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+            </svg>
+          </span>
+          <span className="save-error-message">{saveError}</span>
+          <button
+            className="btn btn-secondary save-error-action"
+            onClick={handleSaveToFile}
+            type="button"
+          >
+            Save backup file
+          </button>
+          <button
+            className="save-error-dismiss"
+            onClick={() => setSaveError("")}
+            type="button"
+            aria-label="Dismiss storage warning"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {undoState && (
+        <div className="undo-toast" role="status" aria-live="polite">
+          <span className="undo-toast-message">{undoState.label}</span>
+          <button
+            className="undo-toast-action"
+            onClick={handleUndo}
+            type="button"
+          >
+            Undo
+          </button>
+          <button
+            className="undo-toast-dismiss"
+            onClick={() => {
+              clearTimeout(undoTimer.current);
+              setUndoState(null);
+            }}
+            type="button"
+            aria-label="Dismiss undo"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {helpOpen && (
         <div className="help-panel">

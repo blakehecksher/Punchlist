@@ -16,6 +16,25 @@ const ACTIVE_KEY = "punch_list_active_v2";
 const PROJ_KEY = (id) => `punch_list_document_${id}`;
 const LEGACY_KEY = "punch_list_legacy_document";
 
+/**
+ * Shape version stamped on every saved project record.
+ *
+ * Saved data outlives any single release: a project written today has to keep
+ * opening after the document model changes. Recording which shape a record was
+ * written in is what makes a later conversion possible instead of a guess.
+ *
+ * Bump this only when the stored shape changes in a way that needs converting,
+ * and add the conversion at the same time. Records written before versioning
+ * existed report version 0.
+ */
+export const SCHEMA_VERSION = 1;
+
+/** Shape version a stored record was written with. 0 means pre-versioning. */
+export function getRecordSchemaVersion(stored) {
+  const version = Number(stored?.schemaVersion);
+  return Number.isFinite(version) && version > 0 ? version : 0;
+}
+
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 // ── Index helpers ──────────────────────────────────────────────
@@ -57,7 +76,10 @@ export function loadProjectData(id) {
 }
 
 export function saveProjectData(id, data) {
-  localStorage.setItem(PROJ_KEY(id), JSON.stringify(data));
+  localStorage.setItem(
+    PROJ_KEY(id),
+    JSON.stringify({ ...data, schemaVersion: SCHEMA_VERSION }),
+  );
   // Update lastSaved + name in index
   const index = loadIndex();
   const entry = index.find((e) => e.id === id);
