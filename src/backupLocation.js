@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Where backup files get written.
  *
@@ -16,19 +17,22 @@ const DB_NAME = "punchlist_settings";
 const STORE = "settings";
 const DIRECTORY_KEY = "backupDirectory";
 
+/** @type {Promise<IDBDatabase> | null} */
 let dbPromise = null;
 
 function openSettingsDB() {
   if (dbPromise) return dbPromise;
 
+  // Reading `req.result` directly rather than off the event target: it is the
+  // same value, and the event's target is typed as a bare EventTarget.
   dbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
+    req.onupgradeneeded = () => {
+      const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
     };
-    req.onsuccess = (e) => {
-      const db = e.target.result;
+    req.onsuccess = () => {
+      const db = req.result;
       db.onclose = () => {
         dbPromise = null;
       };
@@ -38,7 +42,7 @@ function openSettingsDB() {
       };
       resolve(db);
     };
-    req.onerror = (e) => reject(e.target.error);
+    req.onerror = () => reject(req.error);
   }).catch((error) => {
     dbPromise = null;
     throw error;
@@ -47,6 +51,10 @@ function openSettingsDB() {
   return dbPromise;
 }
 
+/**
+ * @param {string} key
+ * @returns {Promise<any>}
+ */
 function readSetting(key) {
   return openSettingsDB().then(
     (db) =>
@@ -54,11 +62,16 @@ function readSetting(key) {
         const tx = db.transaction(STORE, "readonly");
         const req = tx.objectStore(STORE).get(key);
         req.onsuccess = () => resolve(req.result ?? null);
-        tx.onerror = (e) => reject(e.target.error);
+        tx.onerror = () => reject(tx.error);
       }),
   );
 }
 
+/**
+ * @param {string} key
+ * @param {unknown} value
+ * @returns {Promise<void>}
+ */
 function writeSetting(key, value) {
   return openSettingsDB().then(
     (db) =>
@@ -67,8 +80,8 @@ function writeSetting(key, value) {
         const store = tx.objectStore(STORE);
         if (value === null) store.delete(key);
         else store.put(value, key);
-        tx.oncomplete = resolve;
-        tx.onerror = (e) => reject(e.target.error);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
       }),
   );
 }
@@ -84,27 +97,63 @@ export function isFolderChoiceSupported() {
 /**
  * Pick a backup folder. Must be called from a user gesture.
  *
- * Returns the chosen folder's name, or null if the user cancelled.
+ * Reports which of four things happened, because they need different
+ * responses: a cancel is deliberate and needs no message, while a refused
+ * permission leaves the user thinking they set something up when they did not.
+ *
+ * Returns { status, name } where status is one of:
+ *   "chosen"      the folder is stored and writable
+ *   "cancelled"   the picker was dismissed, or the browser refused the folder
+ *                 (both surface as an abort, so they cannot be told apart)
+ *   "denied"      a folder was picked but permission to write was refused
+ *   "unsupported" this browser has no directory picker
  */
+/** @returns {Promise<{ status: string, name: string | null }>} */
 export async function chooseBackupFolder() {
-  if (!isFolderChoiceSupported()) return null;
+  if (!isFolderChoiceSupported()) return { status: "unsupported", name: null };
 
+  const picker = window.showDirectoryPicker;
+  if (!picker) return { status: "unsupported", name: null };
+
+  /** @type {FileSystemDirectoryHandle} */
   let handle;
   try {
-    handle = await window.showDirectoryPicker({
+    handle = await picker.call(window, {
       id: "punchlist-backups",
       mode: "readwrite",
       startIn: "documents",
     });
   } catch {
-    // AbortError when the user closes the picker; nothing to report.
-    return null;
+    // AbortError when the picker is dismissed. The browser also blocks folders
+    // holding system files; declining that prompt aborts the picker the same
+    // way, so the two are indistinguishable here.
+    return { status: "cancelled", name: null };
   }
 
-  if (!(await requestWritePermission(handle))) return null;
+  if (!(await requestWritePermission(handle))) {
+    return { status: "denied", name: handle.name };
+  }
 
   await writeSetting(DIRECTORY_KEY, handle);
-  return handle.name;
+  return { status: "chosen", name: handle.name };
+}
+
+/**
+ * Re-request permission on the folder already chosen. Needs a user gesture.
+ *
+ * Browsers drop write permission between sessions, which leaves a folder
+ * configured but unusable. Rather than silently writing somewhere else
+ * forever, the user gets one click to restore it.
+ */
+/** @returns {Promise<boolean>} */
+export async function reconnectBackupFolder() {
+  try {
+    const handle = await readSetting(DIRECTORY_KEY);
+    if (!handle) return false;
+    return await requestWritePermission(handle);
+  } catch {
+    return false;
+  }
 }
 
 /** Forget the chosen folder and go back to the download folder. */
@@ -120,6 +169,7 @@ export async function clearBackupFolder() {
  * whose permission has lapsed is reported as absent and the caller falls back
  * to the download folder.
  */
+/** @returns {Promise<FileSystemDirectoryHandle | null>} */
 export async function getWritableBackupFolder() {
   let handle;
   try {
@@ -137,17 +187,42 @@ export async function getWritableBackupFolder() {
   }
 }
 
-/** The stored folder's name for display, whether or not it is still granted. */
-export async function getBackupFolderName() {
+/**
+ * The chosen folder's name and whether it can actually be written to.
+ *
+ * The name alone is not enough to display: a folder whose permission has
+ * lapsed still has a name, and showing it on its own tells the user their
+ * backups are going somewhere they are not. The permission state is what the
+ * UI needs in order to be honest about where the next backup will land.
+ *
+ * Returns { name, permission } where permission is "granted", "prompt",
+ * "denied", or "none" when no folder is configured.
+ */
+/** @returns {Promise<{ name: string | null, permission: string }>} */
+export async function getBackupFolderStatus() {
+  let handle;
   try {
-    const handle = await readSetting(DIRECTORY_KEY);
-    return handle?.name ?? null;
+    handle = await readSetting(DIRECTORY_KEY);
   } catch {
-    return null;
+    return { name: null, permission: "none" };
+  }
+
+  if (!handle) return { name: null, permission: "none" };
+  if (!handle.queryPermission) return { name: handle.name ?? null, permission: "denied" };
+
+  try {
+    const state = await handle.queryPermission({ mode: "readwrite" });
+    return { name: handle.name ?? null, permission: state };
+  } catch {
+    return { name: handle.name ?? null, permission: "denied" };
   }
 }
 
-/** Ask for write permission on a handle. Must be called from a user gesture. */
+/**
+ * Ask for write permission on a handle. Must be called from a user gesture.
+ * @param {FileSystemHandle | null | undefined} handle
+ * @returns {Promise<boolean>}
+ */
 export async function requestWritePermission(handle) {
   if (!handle?.queryPermission) return false;
   try {
@@ -166,6 +241,12 @@ export async function requestWritePermission(handle) {
  *
  * Overwriting would be tidier but risks replacing a good backup with a worse
  * one, so a repeat backup on the same day gets its own file instead.
+ */
+/**
+ * @param {string} filename
+ * @param {(name: string) => Promise<boolean>} exists
+ * @param {number} [limit]
+ * @returns {Promise<string>}
  */
 export async function findAvailableName(filename, exists, limit = 50) {
   if (!(await exists(filename))) return filename;
@@ -190,10 +271,17 @@ export async function findAvailableName(filename, exists, limit = 50) {
  * write failed for any reason — folder deleted, drive unplugged, quota,
  * permission revoked mid-write — so the caller can fall back.
  */
+/**
+ * @param {FileSystemDirectoryHandle | null | undefined} directory
+ * @param {string} filename
+ * @param {string} contents
+ * @returns {Promise<string | null>} the name written, or null on any failure
+ */
 export async function writeIntoDirectory(directory, filename, contents) {
   if (!directory?.getFileHandle) return null;
 
   try {
+    /** @param {string} name */
     const exists = async (name) => {
       try {
         await directory.getFileHandle(name);
@@ -217,6 +305,11 @@ export async function writeIntoDirectory(directory, filename, contents) {
 /**
  * Write into the chosen folder. Resolves with the file name actually used, or
  * null when there is no usable folder and the caller should fall back.
+ */
+/**
+ * @param {string} filename
+ * @param {string} contents
+ * @returns {Promise<string | null>}
  */
 export async function writeToBackupFolder(filename, contents) {
   return writeIntoDirectory(await getWritableBackupFolder(), filename, contents);

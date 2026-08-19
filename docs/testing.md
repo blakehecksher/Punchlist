@@ -44,6 +44,27 @@ Run it with:
 npm test
 ```
 
+## Type checking
+
+`npm run typecheck` runs TypeScript over the project in JSDoc mode. Checking
+is opt-in per file: only files beginning with `// @ts-check` are checked, and
+that is the data layer — the modules that read, write and migrate a saved
+punch list. React components are deliberately excluded; checking them produced
+hundreds of implicit-any reports and caught nothing.
+
+Shared shapes are declared in `src/types.d.ts` and referenced from JSDoc:
+
+```js
+/** @param {import("./types.js").ProjectData} data */
+```
+
+`src/browser.d.ts` declares the three File System Access members TypeScript's
+DOM library is missing (`showDirectoryPicker`, `queryPermission`,
+`requestPermission`). Everything else the app touches already resolves.
+
+To bring another file in, add `// @ts-check` at the top and annotate until
+`npm run typecheck` is clean.
+
 ## Next layer
 
 The next addition should be a browser smoke suite using a real Chromium
@@ -64,7 +85,12 @@ worth automating first, because none of them can be covered by a unit test:
 - Load a project record written without a `schemaVersion` and confirm it opens.
 - Choose a backup folder, print, and confirm the file lands there rather than
   in the download folder; then revoke the folder's permission and confirm the
-  next print falls back to a download instead of failing.
+  next print falls back to a download instead of failing, and that the sidebar
+  shows the folder as needing to be reconnected rather than as the current
+  destination.
+- Choose a folder and then decline the browser's "allow this site to edit
+  files" prompt; confirm the app says permission was refused rather than
+  appearing to have accepted the folder.
 
 A real `FileSystemDirectoryHandle` cannot be constructed from a test, so the
 handle round trip through IndexedDB is the one part of the backup-folder

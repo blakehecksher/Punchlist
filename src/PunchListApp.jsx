@@ -11,8 +11,9 @@ import { requestPersistentStorage } from "./storage.js";
 import {
   chooseBackupFolder,
   clearBackupFolder,
-  getBackupFolderName,
+  getBackupFolderStatus,
   isFolderChoiceSupported,
+  reconnectBackupFolder,
 } from "./backupLocation.js";
 import { findOrphanPhotoIds, selectRecoverableOrphans } from "./photoGc.js";
 import {
@@ -414,8 +415,15 @@ export default function PunchListApp() {
   // message that tells the user where their backup file went.
   const [backupNotice, setBackupNotice] = useState("");
   const backupTimer = useRef(null);
-  const [backupFolderName, setBackupFolderName] = useState(null);
+  const [backupFolder, setBackupFolder] = useState({
+    name: null,
+    permission: "none",
+  });
   const folderChoiceSupported = isFolderChoiceSupported();
+  // Only a granted folder actually receives backups. Anything else means the
+  // next backup goes to the download folder, and the UI has to say so.
+  const backupFolderName =
+    backupFolder.permission === "granted" ? backupFolder.name : null;
   const [undoState, setUndoState] = useState(null);
   const undoTimer = useRef(null);
 
@@ -439,11 +447,17 @@ export default function PunchListApp() {
     requestPersistentStorage();
   }, []);
 
+  const refreshBackupFolder = useCallback(
+    () =>
+      getBackupFolderStatus()
+        .then(setBackupFolder)
+        .catch(() => setBackupFolder({ name: null, permission: "none" })),
+    [],
+  );
+
   useEffect(() => {
-    getBackupFolderName()
-      .then(setBackupFolderName)
-      .catch(() => setBackupFolderName(null));
-  }, []);
+    refreshBackupFolder();
+  }, [refreshBackupFolder]);
 
   useEffect(() => {
     (async () => {
@@ -911,16 +925,51 @@ export default function PunchListApp() {
    */
   const handleChooseBackupFolder = useCallback(async () => {
     try {
-      const name = await chooseBackupFolder();
-      if (!name) return;
-      setBackupFolderName(name);
-      announceBackup(`Backups will be saved to ${name}`, 4000);
+      const { status, name } = await chooseBackupFolder();
+
+      if (status === "chosen") {
+        setSaveError("");
+        await refreshBackupFolder();
+        announceBackup(`Backups will be saved to ${name}`, 4000);
+        return;
+      }
+
+      if (status === "denied") {
+        // Picking a folder and then refusing to allow edits leaves the user
+        // believing it is set up, so this one has to be said out loud.
+        setSaveError(
+          `Punch List was not allowed to write to ${name}, so backups will keep going to your download folder. Choose the folder again and select Allow.`,
+        );
+        return;
+      }
+
+      if (status === "unsupported") {
+        setSaveError(
+          "This browser cannot choose a folder. Backups will go to your download folder.",
+        );
+      }
+      // "cancelled" is deliberate: say nothing.
     } catch {
       setSaveError(
         "That folder could not be used for backups. Backups will keep going to your download folder.",
       );
     }
-  }, [announceBackup]);
+  }, [announceBackup, refreshBackupFolder]);
+
+  const handleReconnectBackupFolder = useCallback(async () => {
+    const granted = await reconnectBackupFolder();
+    await refreshBackupFolder();
+
+    if (granted) {
+      setSaveError("");
+      announceBackup("Backup folder reconnected", 4000);
+      return;
+    }
+
+    setSaveError(
+      "Permission for that backup folder was refused, so backups will keep going to your download folder.",
+    );
+  }, [announceBackup, refreshBackupFolder]);
 
   const handleUseDownloadFolder = useCallback(async () => {
     try {
@@ -928,7 +977,8 @@ export default function PunchListApp() {
     } catch {
       // The handle is unusable either way; the fallback already covers it.
     }
-    setBackupFolderName(null);
+    setSaveError("");
+    setBackupFolder({ name: null, permission: "none" });
     announceBackup("Backups will be saved to your download folder", 4000);
   }, [announceBackup]);
 
@@ -1753,8 +1803,14 @@ export default function PunchListApp() {
         onClear={handleClearAll}
         clearConfirm={clearConfirm}
         backupFolderName={backupFolderName}
+        backupFolderPending={
+          backupFolder.name !== null && backupFolder.permission !== "granted"
+            ? backupFolder.name
+            : null
+        }
         backupFolderSupported={folderChoiceSupported}
         onChooseBackupFolder={handleChooseBackupFolder}
+        onReconnectBackupFolder={handleReconnectBackupFolder}
         onUseDownloadFolder={handleUseDownloadFolder}
       />
 

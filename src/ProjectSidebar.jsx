@@ -61,8 +61,10 @@ export default function ProjectSidebar({
   onClear,
   clearConfirm,
   backupFolderName,
+  backupFolderPending,
   backupFolderSupported,
   onChooseBackupFolder,
+  onReconnectBackupFolder,
   onUseDownloadFolder,
 }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -271,15 +273,38 @@ export default function ProjectSidebar({
                       </span>
                     </span>
                   </div>
+
+                  {/* A folder whose permission has lapsed still has a name.
+                      Saying so beats showing the name and quietly writing
+                      somewhere else. */}
+                  {backupFolderPending && (
+                    <p className="sidebar-backup-folder-warning">
+                      {backupFolderPending} needs permission again — backups are
+                      going to Downloads until you reconnect.
+                    </p>
+                  )}
+
                   <div className="sidebar-backup-folder-actions">
+                    {backupFolderPending && (
+                      <button
+                        className="sidebar-backup-folder-btn sidebar-backup-folder-btn--primary"
+                        onClick={onReconnectBackupFolder}
+                        type="button"
+                      >
+                        Reconnect
+                      </button>
+                    )}
                     <button
                       className="sidebar-backup-folder-btn"
                       onClick={onChooseBackupFolder}
                       type="button"
+                      title="Pick a normal folder — browsers block folders that hold system files"
                     >
-                      {backupFolderName ? "Change" : "Choose"}
+                      {backupFolderName || backupFolderPending
+                        ? "Change"
+                        : "Choose"}
                     </button>
-                    {backupFolderName && (
+                    {(backupFolderName || backupFolderPending) && (
                       <button
                         className="sidebar-backup-folder-btn"
                         onClick={onUseDownloadFolder}
@@ -289,6 +314,13 @@ export default function ProjectSidebar({
                       </button>
                     )}
                   </div>
+
+                  {!backupFolderName && !backupFolderPending && (
+                    <p className="sidebar-backup-folder-hint">
+                      Pick a normal folder such as Documents. Browsers block
+                      folders that hold system files.
+                    </p>
+                  )}
                 </div>
               )}
               <button className="sidebar-action-btn" onClick={onSaveToFile} type="button">

@@ -2243,6 +2243,30 @@ body {
   border-color: var(--ink);
 }
 
+.sidebar-backup-folder-btn--primary {
+  border-color: #b85327;
+  color: #7a3418;
+}
+
+.sidebar-backup-folder-btn--primary:hover {
+  border-color: #7a3418;
+  background: #fdf1ec;
+}
+
+.sidebar-backup-folder-warning {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #7a3418;
+}
+
+.sidebar-backup-folder-hint {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--faint);
+}
+
 /* The delete confirm swaps the project's date line for its backup age, so the
    one fact that matters at that moment is where the user is already looking. */
 .sidebar-item-meta--confirm {

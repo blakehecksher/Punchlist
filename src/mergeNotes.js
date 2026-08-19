@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Merging an imported outline into the working punch list.
  *
@@ -13,7 +14,17 @@
 import { formatIssueCode, formatLegacyIssueCodes, getNextIssueSeq } from "./issueIds.js";
 import { makeItem, normalizeRoomKey, uid } from "./items.js";
 
+/**
+ * Map every code an item may be recognised by — current and legacy — to its
+ * position, so a re-import matches by identity rather than by position.
+ *
+ * @param {readonly import("./types.js").Item[]} items
+ * @param {"generalNotes" | "room"} kind
+ * @param {string | undefined} title
+ * @returns {Map<string, number>}
+ */
 export function buildIssueCodeIndex(items, kind, title) {
+  /** @type {Map<string, number>} */
   const index = new Map();
 
   items.forEach((item, position) => {
@@ -27,6 +38,17 @@ export function buildIssueCodeIndex(items, kind, title) {
   return index;
 }
 
+/**
+ * @param {import("./types.js").ProjectData} state
+ * @param {import("./types.js").ParsedImport} payload
+ * @returns {{
+ *   data: import("./types.js").ProjectData,
+ *   counts: {
+ *     updatedCount: number, newCount: number, removedCount: number,
+ *     affectedRoomCount: number, replacedSiteConditions: boolean,
+ *   },
+ * }}
+ */
 export function mergeImportedNotes(state, payload) {
   const rooms = state.rooms.map((room) => ({
     ...room,
@@ -176,6 +198,11 @@ export function mergeImportedNotes(state, payload) {
   };
 }
 
+/**
+ * @param {import("./types.js").ParsedImport} parsed
+ * @param {import("./types.js").ProjectData} state
+ * @returns {string}
+ */
 export function summarizeMerge(parsed, state) {
   const { counts } = mergeImportedNotes(state, parsed);
   const totalTouched =

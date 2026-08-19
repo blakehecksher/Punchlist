@@ -1,9 +1,15 @@
+// @ts-check
+/** @type {import("./types.js").Layout} */
 export const DEFAULT_LAYOUT = {
   density: "2x2",
   showSummary: true,
   showCount: true,
 };
 
+/**
+ * @param {Partial<import("./types.js").Layout> | null | undefined} layout
+ * @returns {import("./types.js").Layout}
+ */
 export function normalizeLayout(layout) {
   return {
     // Punch List uses one document geometry: four photo cards per page.
@@ -20,6 +26,12 @@ export function normalizeLayout(layout) {
   };
 }
 
+/**
+ * @param {Partial<import("./types.js").Layout> | null | undefined} layout
+ * @returns {import("./types.js").Layout & {
+ *   columns: number, firstPageRows: number, otherPageRows: number
+ * }}
+ */
 export function getLayoutMetrics(layout) {
   const normalized = normalizeLayout(layout);
 
