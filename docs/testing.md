@@ -25,6 +25,18 @@ GitHub Pages deployment.
   character stripping.
 - `src/exportNotes.js`: new and complete markers in the copied outline are read
   from the item's formatting, and a stale stored flag is ignored.
+- `src/projectData.js`: the read path every project open goes through — minimal
+  and missing records, unknown fields preserved, photos reattached by item ID
+  in both the current and the older bare-string form, legacy state flags and
+  issuance data dropped, placeholder headers cleared, and issue sequences
+  backfilled when missing or duplicated.
+- `src/exampleProject.js`: the fixture carries each formatting convention in
+  its own markup, its item IDs are unique, and a stale fixture version is
+  replaced while a current one and a real project are left alone.
+- `src/backupLocation.js`: collision-free file naming and the directory write,
+  including that every failure resolves to null so the caller falls back to the
+  download folder rather than losing the backup.
+- `src/endOfPunchList.js`: a null record is treated like an empty one.
 
 Run it with:
 
@@ -50,6 +62,14 @@ worth automating first, because none of them can be covered by a unit test:
 - Underline an item, reload, and confirm the issue code is still underlined —
   this is the regression that the removed `isNew` boolean used to cause.
 - Load a project record written without a `schemaVersion` and confirm it opens.
+- Choose a backup folder, print, and confirm the file lands there rather than
+  in the download folder; then revoke the folder's permission and confirm the
+  next print falls back to a download instead of failing.
+
+A real `FileSystemDirectoryHandle` cannot be constructed from a test, so the
+handle round trip through IndexedDB is the one part of the backup-folder
+feature that needs checking by hand in a browser. The write logic itself takes
+a handle as an argument specifically so it can be tested without one.
 
 `normalizeStoredData` and the example-fixture refresh have no unit coverage;
 they live inside `PunchListApp.jsx` and this suite is where they get tested.

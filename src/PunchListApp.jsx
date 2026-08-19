@@ -8,6 +8,12 @@ import {
   idbCopyProjectPhotos,
 } from "./idb.js";
 import { requestPersistentStorage } from "./storage.js";
+import {
+  chooseBackupFolder,
+  clearBackupFolder,
+  getBackupFolderName,
+  isFolderChoiceSupported,
+} from "./backupLocation.js";
 import { findOrphanPhotoIds, selectRecoverableOrphans } from "./photoGc.js";
 import {
   convertHtmlToImportText,
@@ -26,13 +32,9 @@ import {
   getNextIssueSeq,
   getRoomIssuePrefix,
   isUnnumberedRoom,
-  normalizeItemIssueSeqs,
 } from "./issueIds.js";
 import { DEFAULT_LAYOUT, getLayoutMetrics, normalizeLayout } from "./layout.js";
-import {
-  makeDocumentEndEntry,
-  normalizeDocumentEndEntries,
-} from "./endOfPunchList.js";
+import { makeDocumentEndEntry } from "./endOfPunchList.js";
 import {
   GENERAL_NOTES_SECTION_ID,
   paginateDetail,
@@ -51,8 +53,21 @@ import {
   getActiveId,
   setActiveId,
   migrateLegacy,
+  recordBackup,
 } from "./projectStore.js";
-import { makeItem, uid } from "./items.js";
+import { makeItem } from "./items.js";
+import {
+  getCurrentDateLabel,
+  makeBlankProjectData,
+  makeRoom,
+  normalizeStoredData,
+  stripPhotos,
+} from "./projectData.js";
+import {
+  EXAMPLE_PROJECT,
+  STARTER_OUTLINE,
+  refreshExampleFixture,
+} from "./exampleProject.js";
 import { mergeImportedNotes, summarizeMerge } from "./mergeNotes.js";
 import "./styles.css";
 
@@ -71,12 +86,6 @@ const compareRoomNames = (left, right) => {
     sensitivity: "base",
   });
 };
-const getCurrentDateLabel = (date = new Date()) =>
-  new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
 const PUNCH_LIST_TEMPLATE = `- Site Conditions
     - Site condition 1
     - Site condition 2
@@ -86,35 +95,6 @@ const PUNCH_LIST_TEMPLATE = `- Site Conditions
 - Room Name 101
     - Item 1
     - Item 2`;
-const EXAMPLE_VERSION = 3;
-const STARTER_OUTLINE = `- Site Conditions
-    - Protect finished flooring through the final walkthrough
-    - Maintain dust protection at occupied areas
-- General Notes
-    - Clean work areas and remove construction debris
-    - Match adjacent paint sheen at touch-up locations
-- Kitchen 102
-    - Adjust cabinet reveal
-    - Touch up paint at window return
-- Study 410
-    - Install door stop
-    - Tighten hinge screws
-- Living Room 201
-    - Caulk baseboard at east wall
-    - Touch up paint at built-in
-- Primary Bedroom 301
-    - Adjust closet door alignment
-    - Reinstall towel bar
-- Bathroom 302
-    - Replace cracked tile at niche
-    - Clean grout at shower floor
-- Hall 2nd Floor
-    - Patch and paint wall at railing
-- Exterior
-    - Seal around window trim
-    - Touch up siding at south corner`;
-const DEFAULT_HEADER_NOTE =
-  "Items shown <u>underlined</u> are new as of this walkthrough.<br>Items shown in <b>bold</b> type indicate revisions.<br>Items shown with <s>strikethrough</s> type are complete as of this walkthrough and will be removed from subsequent punch list.";
 
 function containsInlineTag(html, tagName) {
   const patterns = {
@@ -163,386 +143,10 @@ function summarizeEntries(entries) {
   );
 }
 
-function makeBlankProjectData() {
-  return {
-    project: "",
-    projectNum: "",
-    title: "Punch List",
-    date: getCurrentDateLabel(),
-    firm: "",
-    punchlistDate: "",
-    generalNotesTitle: "General",
-    headerNote: DEFAULT_HEADER_NOTE,
-    layout: { ...DEFAULT_LAYOUT },
-    endOfPunchListEntries: [],
-    nextGeneralIssueSeq: 1,
-    siteConditions: [],
-    generalNotes: [],
-    rooms: [],
-  };
-}
 
-function makeRoom(name = "Room Name", firstDescription = "") {
-  return {
-    id: uid(),
-    name,
-    nextItemIssueSeq: 2,
-    items: [makeItem(firstDescription, 1)],
-  };
-}
 
-function makeExampleEntries(prefix, entries) {
-  return entries.map((description, index) => ({
-    id: `${prefix}-${index + 1}`,
-    issueSeq: index + 1,
-    description,
-    photo: null,
-    photoPosition: null,
-  }));
-}
 
-function makeExampleRoom(id, name, entries) {
-  return {
-    id,
-    name,
-    nextItemIssueSeq: entries.length + 1,
-    items: makeExampleEntries(id, entries),
-  };
-}
 
-const INITIAL_DATA = {
-  ...makeBlankProjectData(),
-  nextGeneralIssueSeq: 5,
-  siteConditions: [
-    "Example condition: final painting touch-ups are in progress",
-    "Example condition: flooring protection remains in place in main hall",
-    "Example condition: millwork adjustments are ongoing",
-    "Example condition: electrical trim-out is still underway",
-  ],
-  generalNotes: [
-    {
-      id: "gn1",
-      issueSeq: 1,
-      description:
-        "Example note 01: verify final paint touch-up at all visible corners.",
-      photo: null,
-      photoPosition: null,
-    },
-    {
-      id: "gn2",
-      issueSeq: 2,
-      description:
-        "Example note 02: confirm hardware finish is consistent throughout.",
-      photo: null,
-      photoPosition: null,
-    },
-    {
-      id: "gn3",
-      issueSeq: 3,
-      description:
-        "Example note 03: clean glass, mirrors, and adjacent trim before turnover.",
-      photo: null,
-      photoPosition: null,
-    },
-    {
-      id: "gn4",
-      issueSeq: 4,
-      description:
-        "Example note 04: review all control locations for alignment and labeling.",
-      photo: null,
-      photoPosition: null,
-    },
-  ],
-  rooms: [
-    {
-      id: "r101",
-      name: "101  Entry Hall",
-      nextItemIssueSeq: 3,
-      items: [
-        {
-          id: "r101_1",
-          issueSeq: 1,
-          description: "Example item: touch up paint at door frame corners.",
-          photo: null,
-          photoPosition: null,
-        },
-        {
-          id: "r101_2",
-          issueSeq: 2,
-          description:
-            "Example item: align cover plates vertically with adjacent trim.",
-          photo: null,
-          photoPosition: null,
-        },
-      ],
-    },
-    {
-      id: "r102",
-      name: "102  Kitchen",
-      nextItemIssueSeq: 4,
-      items: [
-        {
-          id: "r102_1",
-          issueSeq: 1,
-          description:
-            "Example item: adjust cabinet reveal for consistent gap.",
-          photo: null,
-          photoPosition: null,
-        },
-        {
-          id: "r102_2",
-          issueSeq: 2,
-          description:
-            "Example item: clean stone backsplash and sealant joints.",
-          photo: null,
-          photoPosition: null,
-        },
-        {
-          id: "r102_3",
-          issueSeq: 3,
-          description:
-            "Example item: verify appliance panel alignment after final install.",
-          photo: null,
-          photoPosition: null,
-        },
-      ],
-    },
-    {
-      id: "r103",
-      name: "103  Pantry",
-      nextItemIssueSeq: 2,
-      items: [
-        {
-          id: "r103_1",
-          issueSeq: 1,
-          description:
-            "Example item: patch and paint shelf support touch-up locations.",
-          photo: null,
-          photoPosition: null,
-        },
-      ],
-    },
-    {
-      id: "r104",
-      name: "104  Living Room",
-      nextItemIssueSeq: 3,
-      items: [
-        {
-          id: "r104_1",
-          issueSeq: 1,
-          description:
-            "Example item: repair minor wall blemish at window return.",
-          photo: null,
-          photoPosition: null,
-        },
-        {
-          id: "r104_2",
-          issueSeq: 2,
-          description:
-            "Example item: confirm grille finish matches adjacent ceiling paint.",
-          photo: null,
-          photoPosition: null,
-        },
-      ],
-    },
-    {
-      id: "r105",
-      name: "105  Bedroom",
-      nextItemIssueSeq: 2,
-      items: [
-        {
-          id: "r105_1",
-          issueSeq: 1,
-          description: "Example item: adjust closet doors for even spacing.",
-          photo: null,
-          photoPosition: null,
-        },
-      ],
-    },
-    {
-      id: "r106",
-      name: "106  Bath",
-      nextItemIssueSeq: 3,
-      items: [
-        {
-          id: "r106_1",
-          issueSeq: 1,
-          description: "Example item: verify fixture trim is installed level.",
-          photo: null,
-          photoPosition: null,
-        },
-        {
-          id: "r106_2",
-          issueSeq: 2,
-          description: "Example item: clean mirror edges and adjacent sealant.",
-          photo: null,
-          photoPosition: null,
-        },
-      ],
-    },
-  ],
-  // Keep the historical sample above as a development reference. The final
-  // overrides below are the polished practice project shown to first-time
-  // users, with enough sections and rooms to demonstrate a real document.
-  ...{
-    ...makeBlankProjectData(),
-    isExample: true,
-    exampleVersion: EXAMPLE_VERSION,
-    project: "184 Cedar Avenue",
-    projectNum: "PL-001",
-    firm: "Northline Studio",
-    punchlistDate: "August 5, 2026 · 9:00 AM",
-    layout: { ...DEFAULT_LAYOUT, showSummary: false },
-    siteConditions: [
-      "Protect finished flooring through the final walkthrough.",
-      "Maintain dust protection at occupied areas.",
-      "Coordinate access with the superintendent before 8:00 AM.",
-    ],
-    nextGeneralIssueSeq: 4,
-    generalNotes: makeExampleEntries("example-general", [
-      "Clean work areas and remove construction debris before final review.",
-      "<b>Match adjacent paint sheen at all touch-up locations.</b>",
-      "Verify hardware operation after all adjustments are complete.",
-    ]),
-    rooms: [
-      makeExampleRoom("example-kitchen", "Kitchen 102", [
-        "Adjust cabinet reveal for a consistent gap.",
-        "Touch up paint at the window return.",
-        "Seal the countertop-to-backsplash joint.",
-      ]),
-      makeExampleRoom("example-study", "Study 410", [
-        "<s>Install door stop.</s>",
-        "Tighten hinge screws at the entry door.",
-      ]),
-      makeExampleRoom("example-living", "Living Room 201", [
-        "<u>Caulk the baseboard joint at the east wall.</u>",
-        "Touch up paint at the built-in shelves.",
-      ]),
-      makeExampleRoom("example-bedroom", "Primary Bedroom 301", [
-        "Adjust closet doors for even alignment.",
-        "Reinstall the towel bar at the dressing area.",
-      ]),
-      makeExampleRoom("example-bathroom", "Bathroom 302", [
-        "Replace the cracked tile at the shower niche.",
-        "Clean grout haze at the shower floor.",
-      ]),
-      makeExampleRoom("example-exterior", "Exterior", [
-        "Seal around the south window trim.",
-        "Touch up siding at the southeast corner.",
-      ]),
-    ],
-  },
-};
-
-function refreshExampleFixture(stored) {
-  if (!stored?.isExample || stored.exampleVersion === EXAMPLE_VERSION) {
-    return stored;
-  }
-
-  return {
-    ...INITIAL_DATA,
-    date: getCurrentDateLabel(),
-  };
-}
-
-function normalizeStoredData(stored, photos = {}) {
-  const {
-    issuance: _unusedIssuance,
-    endOfPunchListDates: _unusedEndDates,
-    ...storedWithoutLegacyEndData
-  } = stored ?? {};
-  const mergePhotos = (items = []) =>
-    items.map((item) => {
-      // A stored new/revised/complete flag would be a second source of truth
-      // competing with the inline formatting. Drop any left by older releases.
-      const { isNew: _legacyIsNew, ...normalizedItem } = item;
-      const entry = photos[item.id];
-      if (!entry) return { ...normalizedItem, photo: null, photoPosition: null };
-      if (typeof entry === "string")
-        return { ...normalizedItem, photo: entry, photoPosition: null };
-      return {
-        ...normalizedItem,
-        photo: entry.dataUrl,
-        photoPosition: entry.position ?? null,
-      };
-    });
-
-  const withIssueSequences = (data) => {
-    const general = normalizeItemIssueSeqs(data.generalNotes || []);
-    const rooms = (data.rooms || []).map((room) => {
-      const normalized = normalizeItemIssueSeqs(room.items || []);
-      return {
-        ...room,
-        nextItemIssueSeq: getNextIssueSeq(
-          normalized.items,
-          room.nextItemIssueSeq ?? normalized.nextIssueSeq,
-        ),
-        items: normalized.items,
-      };
-    });
-
-    return {
-      ...data,
-      nextGeneralIssueSeq: getNextIssueSeq(
-        general.items,
-        data.nextGeneralIssueSeq ?? general.nextIssueSeq,
-      ),
-      generalNotes: general.items,
-      rooms,
-    };
-  };
-
-  const project = ["Untitled document", "Untitled punch list"].includes(
-    stored?.project,
-  )
-    ? ""
-    : (stored?.project ?? "");
-  const projectNum = stored?.projectNum === "Document #" ? "" : (stored?.projectNum ?? "");
-  const firm = ["Prepared by", "Firm Name"].includes(stored?.firm)
-    ? ""
-    : (stored?.firm ?? "");
-
-  const normalized = withIssueSequences({
-    ...makeBlankProjectData(),
-    ...storedWithoutLegacyEndData,
-    project,
-    projectNum,
-    firm,
-    layout: normalizeLayout(stored?.layout),
-    endOfPunchListEntries: normalizeDocumentEndEntries(stored),
-    punchlistDate: stored?.punchlistDate ?? "",
-    generalNotesTitle: stored?.generalNotesTitle ?? "General",
-    siteConditions: stored?.siteConditions || [],
-    generalNotes: mergePhotos(stored?.generalNotes || []),
-    rooms: (stored?.rooms || []).map((room) => ({
-      ...room,
-      items: mergePhotos(room.items || []),
-    })),
-  });
-
-  return normalized;
-}
-
-const stripPhotos = (data) => {
-  const { issuance: _unusedIssuance, ...dataWithoutIssuance } = data;
-  return {
-    ...dataWithoutIssuance,
-    layout: normalizeLayout(data.layout),
-    generalNotes: data.generalNotes.map((item) => ({
-      ...item,
-      photo: null,
-      photoPosition: null,
-    })),
-    rooms: data.rooms.map((room) => ({
-      ...room,
-      items: room.items.map((item) => ({
-        ...item,
-        photo: null,
-        photoPosition: null,
-      })),
-    })),
-  };
-};
 
 function mapItem(data, id, fn) {
   const inGN = data.generalNotes.some((item) => item.id === id);
@@ -792,7 +396,7 @@ function HelpIcon() {
 }
 
 export default function PunchListApp() {
-  const [data, dispatch] = useReducer(reducer, INITIAL_DATA);
+  const [data, dispatch] = useReducer(reducer, EXAMPLE_PROJECT);
   const [saveStatus, setSaveStatus] = useReducer((_, value) => value, "");
   const saveTimer = useRef(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -810,6 +414,8 @@ export default function PunchListApp() {
   // message that tells the user where their backup file went.
   const [backupNotice, setBackupNotice] = useState("");
   const backupTimer = useRef(null);
+  const [backupFolderName, setBackupFolderName] = useState(null);
+  const folderChoiceSupported = isFolderChoiceSupported();
   const [undoState, setUndoState] = useState(null);
   const undoTimer = useRef(null);
 
@@ -834,6 +440,12 @@ export default function PunchListApp() {
   }, []);
 
   useEffect(() => {
+    getBackupFolderName()
+      .then(setBackupFolderName)
+      .catch(() => setBackupFolderName(null));
+  }, []);
+
+  useEffect(() => {
     (async () => {
       try {
         migrateLegacy();
@@ -845,7 +457,7 @@ export default function PunchListApp() {
           if (index.length > 0) {
             id = index[index.length - 1].id;
           } else {
-            id = createProject(INITIAL_DATA);
+            id = createProject(EXAMPLE_PROJECT);
           }
           setActiveId(id);
         }
@@ -1092,7 +704,7 @@ export default function PunchListApp() {
 
     if (!next) {
       const exampleData = {
-        ...INITIAL_DATA,
+        ...EXAMPLE_PROJECT,
         date: getCurrentDateLabel(),
       };
       const nextId = createProject(exampleData);
@@ -1265,10 +877,11 @@ export default function PunchListApp() {
     // project's photos into the export.
     if (!projectId) throw new Error("No active project");
 
-    const { filename, photos } = await saveProjectToFile(
+    const { filename, photos, toFolder } = await saveProjectToFile(
       projectId,
       stripPhotos(snapshot),
     );
+    const location = toFolder ? backupFolderName : "Downloads";
 
     try {
       const storedIds = await idbListPhotoIds(projectId);
@@ -1284,8 +897,40 @@ export default function PunchListApp() {
       // orphans in place costs space but never data.
     }
 
-    return filename;
-  }, []);
+    recordBackup(projectId);
+    // The sidebar renders a cached copy of the index, so the delete
+    // confirmation would keep reporting the pre-backup age without this.
+    setProjects(loadIndex());
+
+    return location ? `${filename} → ${location}` : filename;
+  }, [backupFolderName]);
+
+  /**
+   * Choosing a folder needs a user gesture, so it happens here rather than in
+   * the backup path. Cancelling leaves the current setting alone.
+   */
+  const handleChooseBackupFolder = useCallback(async () => {
+    try {
+      const name = await chooseBackupFolder();
+      if (!name) return;
+      setBackupFolderName(name);
+      announceBackup(`Backups will be saved to ${name}`, 4000);
+    } catch {
+      setSaveError(
+        "That folder could not be used for backups. Backups will keep going to your download folder.",
+      );
+    }
+  }, [announceBackup]);
+
+  const handleUseDownloadFolder = useCallback(async () => {
+    try {
+      await clearBackupFolder();
+    } catch {
+      // The handle is unusable either way; the fallback already covers it.
+    }
+    setBackupFolderName(null);
+    announceBackup("Backups will be saved to your download folder", 4000);
+  }, [announceBackup]);
 
   const handleSaveToFile = useCallback(async () => {
     try {
@@ -2107,6 +1752,10 @@ export default function PunchListApp() {
         onLoadFromFile={handleLoadFromFile}
         onClear={handleClearAll}
         clearConfirm={clearConfirm}
+        backupFolderName={backupFolderName}
+        backupFolderSupported={folderChoiceSupported}
+        onChooseBackupFolder={handleChooseBackupFolder}
+        onUseDownloadFolder={handleUseDownloadFolder}
       />
 
       <div className="toolbar">

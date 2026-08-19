@@ -2178,6 +2178,78 @@ body {
   top: 148px;
 }
 
+/* ── Backup folder control ──
+   Sits with the other backup actions. The default needs no setup, so the
+   control states the current destination rather than demanding a choice. */
+.sidebar-backup-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--soft);
+}
+
+.sidebar-backup-folder-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sidebar-backup-folder-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sidebar-backup-folder-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sidebar-backup-folder-value {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-backup-folder-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sidebar-backup-folder-btn {
+  flex: 1 1 auto;
+  padding: 5px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sidebar-backup-folder-btn:hover {
+  border-color: var(--ink);
+}
+
+/* The delete confirm swaps the project's date line for its backup age, so the
+   one fact that matters at that moment is where the user is already looking. */
+.sidebar-item-meta--confirm {
+  color: #b85327;
+  font-weight: 600;
+}
+
 /* ── Undo toast ──
    Removing a room, an item, or a whole punch list used to be final. The toast
    is the visible half of that being recoverable. */

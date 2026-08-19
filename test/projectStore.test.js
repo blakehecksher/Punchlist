@@ -4,11 +4,13 @@ import assert from "node:assert/strict";
 import {
   SCHEMA_VERSION,
   createProject,
+  describeBackupAge,
   getActiveId,
   getRecordSchemaVersion,
   loadIndex,
   loadProjectData,
   migrateLegacy,
+  recordBackup,
   saveProjectData,
   setActiveId,
 } from "../src/projectStore.js";
@@ -83,4 +85,35 @@ test("keeps the active project selection in browser storage", () => {
   installStorage();
   setActiveId("project-123");
   assert.equal(getActiveId(), "project-123");
+});
+
+test("records when a project was last backed up", () => {
+  installStorage();
+  const id = createProject({ project: "Site", rooms: [], generalNotes: [] });
+
+  recordBackup(id, new Date("2026-08-19T10:00:00.000Z"));
+
+  assert.equal(loadIndex()[0].lastBackupAt, "2026-08-19T10:00:00.000Z");
+});
+
+test("ignores a backup recorded against a project that is gone", () => {
+  installStorage();
+  createProject({ project: "Site", rooms: [], generalNotes: [] });
+
+  assert.doesNotThrow(() => recordBackup("no-such-project"));
+  assert.equal(loadIndex().length, 1);
+});
+
+test("describes backup age for the delete confirmation", () => {
+  const now = new Date("2026-08-19T12:00:00.000Z");
+  const ago = (ms) => new Date(now.getTime() - ms).toISOString();
+
+  assert.equal(describeBackupAge(null, now), "Never backed up");
+  assert.equal(describeBackupAge(undefined, now), "Never backed up");
+  assert.equal(describeBackupAge("not a date", now), "Never backed up");
+  assert.equal(describeBackupAge(ago(30 * 1000), now), "Backed up just now");
+  assert.equal(describeBackupAge(ago(5 * 60 * 1000), now), "Backed up 5 min ago");
+  assert.equal(describeBackupAge(ago(3 * 3600 * 1000), now), "Backed up 3h ago");
+  assert.equal(describeBackupAge(ago(30 * 3600 * 1000), now), "Backed up yesterday");
+  assert.equal(describeBackupAge(ago(5 * 86400 * 1000), now), "Backed up 5 days ago");
 });

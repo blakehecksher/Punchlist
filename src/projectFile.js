@@ -8,6 +8,7 @@
 
 import { idbGetAllPhotos, idbSetPhoto } from "./idb.js";
 import { SCHEMA_VERSION } from "./projectStore.js";
+import { writeToBackupFolder } from "./backupLocation.js";
 
 const FILE_VERSION = 3;
 
@@ -44,23 +45,10 @@ export function buildBackupPayload(data, photos) {
   };
 }
 
-/**
- * Gather project data + all photos into a single JSON object
- * and trigger a browser file download.
- *
- * Resolves with the photo map that was serialized into the file. Callers use
- * that to prove a given photo's bytes are in the saved file before deleting
- * it from IndexedDB.
- */
-export async function saveProjectToFile(projectId, data, when = new Date()) {
-  const photos = await idbGetAllPhotos(projectId);
-
-  const payload = buildBackupPayload(data, photos);
-
-  const json = JSON.stringify(payload);
+/** Hand the file to the browser's download folder. */
+function downloadFile(filename, json) {
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-  const filename = makeBackupFilename(data, when);
 
   const link = document.createElement("a");
   link.href = url;
@@ -69,8 +57,33 @@ export async function saveProjectToFile(projectId, data, when = new Date()) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
 
-  return { filename, photos };
+/**
+ * Gather project data + all photos into one JSON file and write it out.
+ *
+ * Goes to the user's chosen backup folder when one is set and still writable,
+ * and to the browser's download folder otherwise — including when the chosen
+ * folder has gone away. Falling back is always right: a backup written
+ * somewhere unexpected is recoverable, one never written is not.
+ *
+ * Resolves with the photo map that was serialized into the file. Callers use
+ * that to prove a given photo's bytes are in the saved file before deleting
+ * it from IndexedDB.
+ */
+export async function saveProjectToFile(projectId, data, when = new Date()) {
+  const photos = await idbGetAllPhotos(projectId);
+  const json = JSON.stringify(buildBackupPayload(data, photos));
+  const filename = makeBackupFilename(data, when);
+
+  const writtenToFolder = await writeToBackupFolder(filename, json);
+  if (!writtenToFolder) downloadFile(filename, json);
+
+  return {
+    filename: writtenToFolder || filename,
+    photos,
+    toFolder: Boolean(writtenToFolder),
+  };
 }
 
 /**
