@@ -12,9 +12,9 @@ permissions:
 
 jobs:
   # The published site is what real users open, so nothing reaches Pages
-  # without the pagination, import and storage tests passing first.
+  # without the tests, lint and the data-layer typecheck passing first.
   verify:
-    name: Test and lint
+    name: Test, lint and typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +25,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run lint
+      - run: npm run typecheck
 
   deploy:
     needs: verify

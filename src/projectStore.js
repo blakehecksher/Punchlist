@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Multi-project storage layer.
  *
@@ -13,6 +14,7 @@
 
 const INDEX_KEY = "punch_list_index_v2";
 const ACTIVE_KEY = "punch_list_active_v2";
+/** @param {string} id */
 const PROJ_KEY = (id) => `punch_list_document_${id}`;
 const LEGACY_KEY = "punch_list_legacy_document";
 
@@ -29,7 +31,11 @@ const LEGACY_KEY = "punch_list_legacy_document";
  */
 export const SCHEMA_VERSION = 1;
 
-/** Shape version a stored record was written with. 0 means pre-versioning. */
+/**
+ * Shape version a stored record was written with. 0 means pre-versioning.
+ * @param {{ schemaVersion?: unknown } | null | undefined} stored
+ * @returns {number}
+ */
 export function getRecordSchemaVersion(stored) {
   const version = Number(stored?.schemaVersion);
   return Number.isFinite(version) && version > 0 ? version : 0;
@@ -39,6 +45,7 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 // ── Index helpers ──────────────────────────────────────────────
 
+/** @returns {import("./types.js").ProjectIndexEntry[]} */
 export function loadIndex() {
   try {
     const raw = localStorage.getItem(INDEX_KEY);
@@ -59,12 +66,17 @@ export function loadIndex() {
   return [];
 }
 
+/** @param {import("./types.js").ProjectIndexEntry[]} index */
 function saveIndex(index) {
   localStorage.setItem(INDEX_KEY, JSON.stringify(index));
 }
 
 // ── Single project ─────────────────────────────────────────────
 
+/**
+ * @param {string} id
+ * @returns {import("./types.js").ProjectData | null}
+ */
 export function loadProjectData(id) {
   try {
     const raw = localStorage.getItem(PROJ_KEY(id));
@@ -75,6 +87,10 @@ export function loadProjectData(id) {
   return null;
 }
 
+/**
+ * @param {string} id
+ * @param {import("./types.js").ProjectData} data
+ */
 export function saveProjectData(id, data) {
   localStorage.setItem(
     PROJ_KEY(id),
@@ -101,6 +117,9 @@ export function saveProjectData(id, data) {
  * this: whether a recoverable copy exists is the one fact worth having at
  * that moment. Stored on the index rather than in the document so it survives
  * a document reset and never rides along into a backup file.
+ *
+ * @param {string} id
+ * @param {Date} [when]
  */
 export function recordBackup(id, when = new Date()) {
   const index = loadIndex();
@@ -116,6 +135,10 @@ export function recordBackup(id, when = new Date()) {
  * Deleting a project is instant and unrecoverable, so the confirm step says
  * whether a file exists to load back. Two clicks is enough friction; what was
  * missing is knowing the answer to "can I get this back?".
+ *
+ * @param {string | null | undefined} lastBackupAt
+ * @param {Date} [now]
+ * @returns {string}
  */
 export function describeBackupAge(lastBackupAt, now = new Date()) {
   if (!lastBackupAt) return "Never backed up";
@@ -123,7 +146,7 @@ export function describeBackupAge(lastBackupAt, now = new Date()) {
   const then = new Date(lastBackupAt);
   if (Number.isNaN(then.getTime())) return "Never backed up";
 
-  const minutes = Math.floor((now - then) / 60000);
+  const minutes = Math.floor((now.getTime() - then.getTime()) / 60000);
   if (minutes < 1) return "Backed up just now";
   if (minutes < 60) return `Backed up ${minutes} min ago`;
 
@@ -135,6 +158,7 @@ export function describeBackupAge(lastBackupAt, now = new Date()) {
   return `Backed up ${days} days ago`;
 }
 
+/** @param {string} id */
 export function deleteProject(id) {
   localStorage.removeItem(PROJ_KEY(id));
   const index = loadIndex().filter((e) => e.id !== id);
@@ -147,12 +171,17 @@ export function getActiveId() {
   return localStorage.getItem(ACTIVE_KEY) || null;
 }
 
+/** @param {string} id */
 export function setActiveId(id) {
   localStorage.setItem(ACTIVE_KEY, id);
 }
 
 // ── Create / duplicate ─────────────────────────────────────────
 
+/**
+ * @param {import("./types.js").ProjectData} data
+ * @returns {string} the new project's id
+ */
 export function createProject(data) {
   const id = uid();
   const index = loadIndex();
@@ -176,6 +205,8 @@ export function createProject(data) {
  * If the old single-project key exists and there is no pl_index yet,
  * migrate it into a new project entry. Returns the migrated project id
  * (or null if nothing to migrate).
+ *
+ * @returns {string | null}
  */
 export function migrateLegacy() {
   // Only migrate if no index exists yet

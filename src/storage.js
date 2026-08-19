@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Browser storage durability helpers.
  *

@@ -1,8 +1,22 @@
+// @ts-check
+/**
+ * @param {unknown} value
+ * @returns {value is number}
+ */
 function isPositiveInteger(value) {
-  return Number.isInteger(value) && value > 0;
+  return Number.isInteger(value) && /** @type {number} */ (value) > 0;
 }
 
+/**
+ * Give every item a unique sequence, filling gaps left by missing or
+ * duplicated ones. Existing valid sequences are kept: they are the codes
+ * already printed on a handed-out PDF.
+ *
+ * @param {readonly import("./types.js").Item[]} [items]
+ * @returns {{ items: import("./types.js").Item[], nextIssueSeq: number }}
+ */
 export function normalizeItemIssueSeqs(items = []) {
+  /** @type {Set<number>} */
   const used = new Set();
   let nextCandidate = 1;
   const normalizedItems = items.map((item) => {
@@ -29,6 +43,11 @@ export function normalizeItemIssueSeqs(items = []) {
   };
 }
 
+/**
+ * @param {readonly import("./types.js").Item[]} [items]
+ * @param {number} [nextIssueSeq]
+ * @returns {number}
+ */
 export function getNextIssueSeq(items = [], nextIssueSeq = 1) {
   const normalizedNext = isPositiveInteger(nextIssueSeq) ? nextIssueSeq : 1;
   const maxIssueSeq = items.reduce(
@@ -50,14 +69,21 @@ export const GENERAL_NOTES_PREFIX = "GEN";
 export const LEGACY_UNNUMBERED_ROOM_PREFIX = "RM";
 export const LEGACY_GENERAL_NOTES_PREFIX = "GN";
 
+/** @param {string} [roomName] */
 export function isExteriorRoom(roomName = "") {
   return /\bexterior\b/i.test(roomName);
 }
 
+/** @param {string} [roomName] */
 export function isUnnumberedRoom(roomName = "") {
   return !ROOM_NUMBER_RE.test(roomName) && !isExteriorRoom(roomName);
 }
 
+/**
+ * The prefix an item's printed code starts with, e.g. "102" or "EXT".
+ * @param {string} [roomName]
+ * @returns {string}
+ */
 export function getRoomIssuePrefix(roomName = "") {
   const match = roomName.match(ROOM_NUMBER_RE);
   if (match) return match[0];
@@ -66,6 +92,12 @@ export function getRoomIssuePrefix(roomName = "") {
     : UNNUMBERED_ROOM_PREFIX;
 }
 
+/**
+ * @param {"generalNotes" | "room"} kind
+ * @param {string | undefined} title
+ * @param {number | undefined} issueSeq
+ * @returns {string}
+ */
 export function formatIssueCode(kind, title, issueSeq) {
   const prefix =
     kind === "generalNotes" ? GENERAL_NOTES_PREFIX : getRoomIssuePrefix(title);
@@ -75,19 +107,27 @@ export function formatIssueCode(kind, title, issueSeq) {
 /**
  * Every older code this item may have carried, so re-importing a previously
  * exported outline still updates the existing item instead of duplicating it.
+ *
+ * @param {"generalNotes" | "room"} kind
+ * @param {string | undefined} title
+ * @param {number | undefined} issueSeq
+ * @returns {string[]}
  */
 export function formatLegacyIssueCodes(kind, title, issueSeq) {
   const sequence = String(issueSeq ?? 0).padStart(2, "0");
   if (kind === "generalNotes") {
     return [`${LEGACY_GENERAL_NOTES_PREFIX}-${sequence}`];
   }
-  if (isExteriorRoom(title) && !ROOM_NUMBER_RE.test(title)) {
+  // Guarding the name rather than passing it straight to the regex: an
+  // undefined title would have been coerced to the string "undefined".
+  const roomName = title ?? "";
+  if (isExteriorRoom(roomName) && !ROOM_NUMBER_RE.test(roomName)) {
     return [
       `${UNNUMBERED_ROOM_PREFIX}-${sequence}`,
       `${LEGACY_UNNUMBERED_ROOM_PREFIX}-${sequence}`,
     ];
   }
-  if (isUnnumberedRoom(title)) {
+  if (isUnnumberedRoom(roomName)) {
     return [`${LEGACY_UNNUMBERED_ROOM_PREFIX}-${sequence}`];
   }
   return [];

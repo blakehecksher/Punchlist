@@ -113,3 +113,40 @@ test("reports failure so the caller falls back to the download folder", async ()
   assert.equal(await writeIntoDirectory(null, "b.json", "{}"), null);
   assert.equal(await writeIntoDirectory({}, "b.json", "{}"), null);
 });
+
+test("reports no folder when browser storage is unavailable", async () => {
+  // Node has no indexedDB. Every one of these has to degrade rather than
+  // throw, because they run on the path that writes a backup.
+  const { getBackupFolderStatus, getWritableBackupFolder, reconnectBackupFolder } =
+    await import("../src/backupLocation.js");
+
+  assert.deepEqual(await getBackupFolderStatus(), { name: null, permission: "none" });
+  assert.equal(await getWritableBackupFolder(), null);
+  assert.equal(await reconnectBackupFolder(), false);
+});
+
+test("reports the picker as unsupported rather than throwing", async () => {
+  const { chooseBackupFolder } = await import("../src/backupLocation.js");
+
+  assert.deepEqual(await chooseBackupFolder(), { status: "unsupported", name: null });
+});
+
+test("refuses write permission for a handle that cannot report it", async () => {
+  // A handle read back from storage in an unusable form has no permission
+  // methods. Treating that as usable would mean writing nowhere.
+  const { requestWritePermission } = await import("../src/backupLocation.js");
+
+  assert.equal(await requestWritePermission(null), false);
+  assert.equal(await requestWritePermission({}), false);
+  assert.equal(
+    await requestWritePermission({
+      queryPermission: async () => "prompt",
+      requestPermission: async () => "denied",
+    }),
+    false,
+  );
+  assert.equal(
+    await requestWritePermission({ queryPermission: async () => "granted" }),
+    true,
+  );
+});
