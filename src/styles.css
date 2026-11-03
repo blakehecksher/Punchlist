@@ -2221,6 +2221,7 @@ body {
 
 .sidebar-backup-folder-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -2244,6 +2245,7 @@ body {
 }
 
 .sidebar-backup-folder-btn--primary {
+  flex-basis: 100%;
   border-color: #b85327;
   color: #7a3418;
 }
