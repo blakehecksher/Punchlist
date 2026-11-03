@@ -1,9 +1,10 @@
 # State
-_Last updated: 2026-08-19_
+_Last updated: 2026-11-03_
 
 ## Current focus
-Hardening finished. The next piece of work is the outline editing pane, on its
-own branch and in its own conversation.
+Fix the backup folder reconnect controls overflowing the sidebar. The action
+row now wraps, and Reconnect takes a full row above Change and Use Downloads.
+The outline editing pane remains the next larger feature.
 
 ## What's working
 - One continuously editable punch list. Preview / Print PDF is the only
@@ -58,7 +59,10 @@ own branch and in its own conversation.
 - `importParser.js` / `importHtml.js` / `importFile.js` — external input.
 
 ## In progress
-- Nothing. This round is complete and verified in a real Chromium session.
+- Backup reconnect layout: two CSS declarations changed. No component or
+  backup permission logic changed. Visual verification was unavailable because
+  access to the existing Edge window was not approved; repository CI is used
+  for the test, lint, typecheck, and build checks.
 
 ## Known issues
 - Project data is still browser-local. Backups narrow the window; they do not
@@ -82,7 +86,8 @@ own branch and in its own conversation.
   browser storage until its project is deleted.
 
 ## Next actions
-1. Merge this branch and confirm the hosted app updates from `master`.
+1. Review and merge the backup reconnect layout fix, then confirm the hosted
+   sidebar keeps Reconnect, Change, and Use Downloads inside the card.
 2. Add the Playwright smoke suite in `testing.md` — the flows are listed and
    have all been run by hand; checking them in is what makes them repeatable.
    This is the largest remaining gap.
@@ -114,6 +119,8 @@ Underline an item, reload, confirm its code is still underlined.
 ```
 
 ## Recent logs
+- docs/log/2026-11-03 1200 Backup reconnect layout.md — wrap the backup controls
+  and place Reconnect on its own row.
 - docs/log/2026-08-19 2200 Backup folder honesty and opt-in typecheck.md —
   fixed the folder control reporting a destination it was not writing to, and
   added JSDoc type checking over the data layer.
